@@ -1988,7 +1988,9 @@ jl_cgval_t function_sig_t::emit_a_ccall(
         }
     }
     else if (symarg.jl_ptr != NULL) {
-        null_pointer_check(ctx, symarg.jl_ptr);
+        // null_pointer_check(ctx, symarg.jl_ptr);
+        // We throw a UndefRefError in the SegFault handler if the pointer is
+        // NULL.
         Type *funcptype = PointerType::get(functype, 0);
         llvmf = ctx.builder.CreateIntToPtr(symarg.jl_ptr, funcptype);
     }

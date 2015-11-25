@@ -934,7 +934,12 @@ static void raise_exception(jl_codectx_t &ctx, Value *exc,
                      jl_box_voidpointer(wrap(ctx.builder.GetInsertBlock())),
                      jl_box_voidpointer(wrap(exc)));
     } else {
-        ctx.builder.CreateCall(prepare_call(jlthrow_func), { mark_callee_rooted(exc) });
+        if (exc) {
+            ctx.builder.CreateCall(prepare_call(jlthrow_func), { mark_callee_rooted(exc) });
+        }
+        else {
+            ctx.builder.CreateLoad(Constant::getNullValue(T_ppint8), true);
+        }
     }
     ctx.builder.CreateUnreachable();
     if (!contBB) {
@@ -1001,8 +1006,7 @@ static inline Instruction *maybe_mark_load_dereferenceable(Instruction *LI, bool
 static void null_pointer_check(jl_codectx_t &ctx, Value *v)
 {
     raise_exception_unless(ctx,
-            ctx.builder.CreateICmpNE(v, Constant::getNullValue(v->getType())),
-            literal_pointer_val(ctx, jl_undefref_exception));
+            ctx.builder.CreateICmpNE(v, Constant::getNullValue(v->getType())), (Value*)NULL);
 }
 
 static void emit_type_error(jl_codectx_t &ctx, const jl_cgval_t &x, Value *type, const std::string &msg)
@@ -1440,7 +1444,7 @@ static jl_cgval_t emit_getfield_knownidx(jl_codectx_t &ctx, const jl_cgval_t &st
     jl_value_t *jfty = jl_field_type(jt, idx);
     Type *elty = julia_type_to_llvm(jfty);
     if (jfty == jl_bottom_type) {
-        raise_exception(ctx, literal_pointer_val(ctx, jl_undefref_exception));
+        raise_exception(ctx, (Value*)NULL);
         return jl_cgval_t(); // unreachable
     }
     if (type_is_ghost(elty))
