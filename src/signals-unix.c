@@ -95,6 +95,7 @@ static void segv_handler(int sig, siginfo_t *info, void *context)
         jl_throw(jl_undefref_exception);
     }
     else {
+        jl_safe_printf("SegFault address: %p\n", info->si_addr);
 #ifdef SEGV_EXCEPTION
         sigemptyset(&sset);
         sigaddset(&sset, SIGSEGV);
