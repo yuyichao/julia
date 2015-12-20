@@ -15,6 +15,8 @@
 #include <sys/_structs.h>
 #endif
 
+#include <unistd.h>
+
 static void attach_exception_port(thread_port_t thread);
 
 #ifdef JULIA_ENABLE_THREADING
@@ -27,12 +29,15 @@ static arraylist_t suspended_threads;
 void jl_mach_gc_begin(void)
 {
     JL_LOCK_NOGC(gc_suspend);
+    jl_safe_printf("%d: %s:\n", getpid(), __func__);
     jl_gc_safepoint_activated = 1;
     JL_UNLOCK_NOGC(gc_suspend);
 }
 void jl_mach_gc_end(void)
 {
     JL_LOCK_NOGC(gc_suspend);
+    jl_safe_printf("%d: %s: number of threads suspended: %d\n",
+                   getpid(), __func__, (int)suspended_threads.len);
     jl_gc_safepoint_activated = 0;
     for (size_t i = 0;i < suspended_threads.len;i++) {
         uintptr_t item = (uintptr_t)suspended_threads.items[i];
@@ -157,7 +162,10 @@ kern_return_t catch_exception_raise(mach_port_t            exception_port,
     HANDLE_MACH_ERROR("thread_get_state", ret);
     uint64_t fault_addr = exc_state.__faultvaddr;
 #ifdef JULIA_ENABLE_THREADING
+    jl_safe_printf("%d: %s: SegFault @ address: %lx\n",
+                   getpid(), __func__, fault_addr);
     if (fault_addr == (uintptr_t)jl_gc_signal_page) {
+        jl_safe_printf("%d: %s: GC safepoint triggered\n", getpid(), __func__);
         JL_LOCK_NOGC(gc_suspend);
         if (!jl_gc_safepoint_activated) {
             // GC is done before we get the message, do nothing and return
@@ -167,6 +175,8 @@ kern_return_t catch_exception_raise(mach_port_t            exception_port,
         // Otherwise, set the gc state of the thread, suspend and record it
         for (int16_t tid = 0;tid < jl_n_threads;tid++) {
             if (pthread_mach_thread_np(jl_all_task_states[tid].system_id) == thread) {
+                jl_safe_printf("%d: %s: found thread id: %d\n",
+                               getpid(), __func__, (int)tid);
                 int8_t gc_state = jl_all_task_states[tid].ptls->gc_state;
                 jl_all_task_states[tid].ptls->gc_state = 1;
                 uintptr_t item = tid | (((uintptr_t)gc_state) << 16);
@@ -178,7 +188,8 @@ kern_return_t catch_exception_raise(mach_port_t            exception_port,
         }
         JL_UNLOCK_NOGC(gc_suspend);
         // Safepoint triggered on a unmanaged thread, complain and fall through
-        jl_safe_printf("ERROR: GC safepoint triggered on unmanaged thread.\n");
+        jl_safe_printf("%d, ERROR: GC safepoint triggered on unmanaged thread.\n",
+                       getpid());
     }
 #endif
 #ifdef SEGV_EXCEPTION
