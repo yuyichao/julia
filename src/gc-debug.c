@@ -298,6 +298,9 @@ JL_DLLEXPORT jl_gc_debug_env_t jl_gc_debug_env = {
     {0, 0, 0, 0}
 };
 
+// a list of tasks for conservative stack scan during gc_scrub
+static arraylist_t jl_gc_debug_tasks;
+
 static void gc_debug_alloc_init(jl_alloc_num_t *num, const char *name)
 {
     // Not very generic and robust but good enough for a debug option
@@ -320,10 +323,8 @@ static int gc_debug_alloc_check(jl_alloc_num_t *num)
     return ((num->num - num->min) % num->interv) == 0;
 }
 
-static char *gc_stack_lo;
 static void gc_debug_init(void)
 {
-    gc_stack_lo = (char*)gc_get_stack_ptr();
     char *env = getenv("JL_GC_NO_GENERATIONAL");
     if (env && strcmp(env, "0") != 0) {
         jl_gc_debug_env.sweep_mask = GC_MARKED;
@@ -331,6 +332,7 @@ static void gc_debug_init(void)
     gc_debug_alloc_init(&jl_gc_debug_env.pool, "POOL");
     gc_debug_alloc_init(&jl_gc_debug_env.other, "OTHER");
     gc_debug_alloc_init(&jl_gc_debug_env.print, "PRINT");
+    arraylist_new(&jl_gc_debug_tasks, 0);
 }
 
 static inline int gc_debug_check_pool(void)
@@ -386,9 +388,44 @@ static void gc_scrub_range(char *stack_lo, char *stack_hi)
     }
 }
 
-static void gc_scrub(char *stack_hi)
+static void gc_scrub_task(jl_task_t *ta)
 {
-    gc_scrub_range(gc_stack_lo, stack_hi);
+    int16_t tid = ta->tid;
+    jl_tls_states_t *ptls = jl_all_task_states[tid].ptls;
+    // The task that is running on the thread's default stack
+#ifndef COPY_STACKS
+    jl_task_t *thread_task = ptls->root_task;
+#else
+    jl_task_t *thread_task = ptls->current_task;
+#endif
+    if (ta == thread_task) {
+        gc_scrub_range(ptls->stack_lo, ptls->stack_hi);
+        return;
+    }
+    if (ta->stkbuf == (void*)(intptr_t)-1 || !ta->stkbuf)
+        return;
+#ifndef COPY_STACKS
+    // `stkbuf` is the whole stack. Skip the first page since it's the stack
+    // guard. Ideally we should skip to the actual stack pointer
+    // (ref `rebase_state`) but this should be good enough for debugging.
+    gc_scrub_range((char*)ta->stkbuf + jl_pagesize,
+                   (char*)ta->stkbuf + ta->ssize);
+#else
+    // `stkbuf` is the stack we copied so simply scan the whole buffer
+    gc_scrub_range((char*)ta->stkbuf, (char*)ta->stkbuf + ta->ssize);
+#endif
+}
+
+static void gc_scrub(void)
+{
+    for (size_t i = 0;i < jl_gc_debug_tasks.len;i++)
+        gc_scrub_task((jl_task_t*)jl_gc_debug_tasks.items[i]);
+    jl_gc_debug_tasks.len = 0;
+}
+
+static void gc_debug_rem_task(jl_task_t *ta)
+{
+    arraylist_push(&jl_gc_debug_tasks, (void*)ta);
 }
 
 #else
@@ -411,9 +448,13 @@ static inline void gc_debug_init(void)
 {
 }
 
-static void gc_scrub(char *stack_hi)
+static void gc_scrub(void)
 {
-    (void)stack_hi;
+}
+
+static void gc_debug_rem_task(jl_task_t *ta)
+{
+    (void)ta;
 }
 
 #endif

@@ -336,14 +336,6 @@ static region_t *find_region(void *ptr, int maybe);
     ((GC_PAGE_DATA((data) - GC_PAGE_OFFSET) - \
       &(region)->pages[0][0])/GC_PAGE_SZ)
 
-NOINLINE static uintptr_t gc_get_stack_ptr(void)
-{
-    void *dummy = NULL;
-    // The mask is to suppress the compiler warning about returning
-    // address of local variable
-    return (uintptr_t)&dummy & ~(uintptr_t)15;
-}
-
 #include "gc-debug.c"
 
 // Only one thread can be doing the collection right now. That thread set
@@ -1779,6 +1771,7 @@ static void gc_mark_stack(jl_value_t* ta, jl_gcframe_t *s, ptrint_t offset, int 
 
 static void gc_mark_task_stack(jl_task_t *ta, int d)
 {
+    gc_debug_rem_task(ta);
     int stkbuf = (ta->stkbuf != (void*)(intptr_t)-1 && ta->stkbuf != NULL);
     int16_t tid = ta->tid;
     jl_tls_states_t *ptls = jl_all_task_states[tid].ptls;
@@ -2219,7 +2212,7 @@ static int sweep_mask = GC_MARKED;
 #define MIN_SCAN_BYTES 1024*1024
 
 // Only one thread should be running in this function
-static void _jl_gc_collect(int full, char *stack_hi)
+static void _jl_gc_collect(int full)
 {
     uint64_t t0 = jl_hrtime();
     int recollect = 0;
@@ -2373,7 +2366,7 @@ static void _jl_gc_collect(int full, char *stack_hi)
             sweep_weak_refs();
             gc_sweep_once(sweep_mask);
             sweeping = 1;
-            gc_scrub(stack_hi);
+            gc_scrub();
         }
         if (gc_sweep_inc(sweep_mask)) {
             // sweeping is over
@@ -2438,7 +2431,7 @@ static void _jl_gc_collect(int full, char *stack_hi)
 #endif
     if (recollect) {
         n_pause--;
-        _jl_gc_collect(0, stack_hi);
+        _jl_gc_collect(0);
     }
 }
 
@@ -2446,7 +2439,6 @@ JL_DLLEXPORT void jl_gc_collect(int full)
 {
     if (jl_gc_disable_counter)
         return;
-    char *stack_hi = (char*)gc_get_stack_ptr();
     gc_debug_print();
     JL_SIGATOMIC_BEGIN();
 
@@ -2471,7 +2463,7 @@ JL_DLLEXPORT void jl_gc_collect(int full)
     jl_gc_signal_begin();
 
     if (!jl_gc_disable_counter)
-        _jl_gc_collect(full, stack_hi);
+        _jl_gc_collect(full);
 
     // Need to reset the page protection before resetting the flag since
     // the thread will trigger a segfault immediately after returning from
