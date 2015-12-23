@@ -67,6 +67,20 @@ extern "C" {
 // JULIA_ENABLE_THREADING is switched on in Make.inc if JULIA_THREADS is
 // set (in Make.user)
 
+#ifdef JULIA_ENABLE_THREADING
+JL_DLLEXPORT extern volatile size_t *jl_gc_signal_page;
+STATIC_INLINE void jl_gc_safepoint(void)
+{
+    // This triggers a SegFault when we are in GC
+    // Assign it to a variable to make sure the compiler emit the load
+    // and to avoid Clang warning for -Wunused-volatile-lvalue
+    size_t v = *jl_gc_signal_page;
+    (void)v;
+}
+#else // JULIA_ENABLE_THREADING
+#define jl_gc_safepoint()
+#endif // JULIA_ENABLE_THREADING
+
 JL_DLLEXPORT int16_t jl_threadid(void);
 JL_DLLEXPORT void *jl_threadgroup(void);
 JL_DLLEXPORT void jl_cpu_pause(void);
@@ -75,8 +89,9 @@ JL_DLLEXPORT void jl_threading_profile(void);
 #if defined(__GNUC__)
 #  define JL_ATOMIC_FETCH_AND_ADD(a,b)                                    \
        __sync_fetch_and_add(&(a), (b))
+// Returns the original value of `a`
 #  define JL_ATOMIC_COMPARE_AND_SWAP(a,b,c)                               \
-       __sync_bool_compare_and_swap(&(a), (b), (c))
+       __sync_val_compare_and_swap(&(a), (b), (c))
 #  define JL_ATOMIC_TEST_AND_SET(a)                                       \
        __sync_lock_test_and_set(&(a), 1)
 #  define JL_ATOMIC_RELEASE(a)                                            \
@@ -84,12 +99,13 @@ JL_DLLEXPORT void jl_threading_profile(void);
 #elif defined(_OS_WINDOWS_)
 #  define JL_ATOMIC_FETCH_AND_ADD(a,b)                                    \
        _InterlockedExchangeAdd((volatile LONG *)&(a), (b))
+// Returns the original value of `a`
 #  define JL_ATOMIC_COMPARE_AND_SWAP(a,b,c)                               \
        _InterlockedCompareExchange64((volatile LONG64 *)&(a), (c), (b))
 #  define JL_ATOMIC_TEST_AND_SET(a)                                       \
        _InterlockedExchange64(&(a), 1)
 #  define JL_ATOMIC_RELEASE(a)                                            \
-       _InterlockedExchange64(&(a), 0)
+       (void)_InterlockedExchange64(&(a), 0)
 #else
 #  error "No atomic operations supported."
 #endif
@@ -104,7 +120,7 @@ JL_DLLEXPORT void jl_threading_profile(void);
     extern uint64_t volatile m ## _mutex;                                 \
     extern int32_t m ## _lock_count;
 
-#define JL_LOCK(m) do {                                                 \
+#define JL_LOCK_WAIT(m, wait_ex) do {                                   \
         if (m ## _mutex == uv_thread_self()) {                          \
             ++m ## _lock_count;                                         \
         }                                                               \
@@ -112,10 +128,11 @@ JL_DLLEXPORT void jl_threading_profile(void);
             for (;;) {                                                  \
                 if (m ## _mutex == 0 &&                                 \
                     JL_ATOMIC_COMPARE_AND_SWAP(m ## _mutex, 0,          \
-                                               uv_thread_self())) {     \
+                                               uv_thread_self()) == 0) { \
                     m ## _lock_count = 1;                               \
                     break;                                              \
                 }                                                       \
+                wait_ex;                                                \
                 jl_cpu_pause();                                         \
             }                                                           \
         }                                                               \
@@ -132,10 +149,16 @@ JL_DLLEXPORT void jl_threading_profile(void);
 #else
 #define JL_DEFINE_MUTEX(m)
 #define JL_DEFINE_MUTEX_EXT(m)
-#define JL_LOCK(m) do {} while (0)
+#define JL_LOCK_WAIT(m, wait_ex) do {} while (0)
 #define JL_UNLOCK(m) do {} while (0)
 #endif
 
+// JL_LOCK is a GC safe point while JL_LOCK_NOGC is not
+// Always use JL_LOCK unless no one holding the lock can trigger a GC or GC
+// safepoint. JL_LOCK_NOGC should only be needed for GC internal locks.
+#define JL_LOCK(m) JL_LOCK_WAIT(m, jl_gc_safepoint())
+#define JL_LOCK_NOGC(m) JL_LOCK_WAIT(m, )
+#define JL_UNLOCK_NOGC(m) JL_UNLOCK(m)
 
 // core data types ------------------------------------------------------------
 
@@ -1391,6 +1414,7 @@ typedef struct _jl_handler_t {
     jl_jmp_buf eh_ctx;
     jl_gcframe_t *gcstack;
     struct _jl_handler_t *prev;
+    int8_t gc_state;
 } jl_handler_t;
 
 typedef struct _jl_task_t {
@@ -1426,11 +1450,20 @@ typedef struct _jl_task_t {
 typedef struct _jl_tls_states_t {
     jl_gcframe_t *pgcstack;
     jl_value_t *exception_in_transit;
+    // Whether it is safe to execute GC at the same time.
+    // gc_state = 1 means the thread is waiting for the GC to finish.
+    // gc_state = 3 means the thread is running unmanaged code that can be
+    //              execute at the same time with the GC.
+    volatile int8_t gc_state;
+    volatile int8_t in_finalizer;
+    int8_t disable_gc;
     struct _jl_thread_heap_t *heap;
     jl_task_t *volatile current_task;
     jl_task_t *root_task;
     jl_value_t *volatile task_arg_in_transit;
     void *stackbase;
+    char *stack_lo;
+    char *stack_hi;
     jl_jmp_buf *volatile jmp_target;
     jl_jmp_buf base_ctx; // base context of stack
     int8_t in_jl_;
@@ -1460,16 +1493,50 @@ JL_DLLEXPORT JL_CONST_FUNC jl_tls_states_t *(jl_get_ptls_states)(void);
 #ifndef JULIA_ENABLE_THREADING
 extern JL_DLLEXPORT jl_tls_states_t jl_tls_states;
 #define jl_get_ptls_states() (&jl_tls_states)
-#else
+STATIC_INLINE int8_t jl_gc_state_set(int8_t state, int8_t old_state)
+{
+    (void)state;
+    return old_state;
+}
+STATIC_INLINE int8_t jl_gc_state_save_and_set(int8_t state)
+{
+    (void)state;
+    return 0;
+}
+#define jl_gc_unsafe_enter() jl_gc_state_save_and_set(0)
+#define jl_gc_unsafe_leave(state) ((void)state)
+#define JL_RETURN_NULL_IF_UNMANAGED() do {} while (0)
+#else // ifndef JULIA_ENABLE_THREADING
 typedef jl_tls_states_t *(*jl_get_ptls_states_func)(void);
 JL_DLLEXPORT void jl_set_ptls_states_getter(jl_get_ptls_states_func f);
-#endif
+STATIC_INLINE int8_t jl_gc_state_set(int8_t state, int8_t old_state)
+{
+    jl_get_ptls_states()->gc_state = state;
+    // A safe point is required if we transition from GC-safe region to
+    // non GC-safe region.
+    if (old_state && !state)
+        jl_gc_safepoint();
+    return old_state;
+}
+STATIC_INLINE int8_t jl_gc_state_save_and_set(int8_t state)
+{
+    return jl_gc_state_set(state, jl_get_ptls_states()->gc_state);
+}
+#define jl_gc_unsafe_enter() jl_gc_state_save_and_set(0)
+#define jl_gc_unsafe_leave(state) jl_gc_state_set((state), 0)
+#define JL_RETURN_NULL_IF_UNMANAGED() do {       \
+        if (jl_get_ptls_states()->gc_state) {    \
+            return NULL;                         \
+        }                                        \
+    } while (0)
+#endif // ifndef JULIA_ENABLE_THREADING
 
 STATIC_INLINE void jl_eh_restore_state(jl_handler_t *eh)
 {
     JL_SIGATOMIC_BEGIN();
     jl_current_task->eh = eh->prev;
     jl_pgcstack = eh->gcstack;
+    jl_gc_state_save_and_set(eh->gc_state);
     JL_SIGATOMIC_END();
 }
 

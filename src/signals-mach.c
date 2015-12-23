@@ -15,6 +15,37 @@
 #include <sys/_structs.h>
 #endif
 
+static void attach_exception_port(thread_port_t thread);
+
+#ifdef JULIA_ENABLE_THREADING
+JL_DEFINE_MUTEX(gc_suspend)
+// This is a copy of `jl_gc_safepoint_activated` to make it easier
+// to synchronic the GC and the signal handler
+static int jl_gc_safepoint_activated = 0;
+// low 16 bits are the thread id, the next 8 bits are the original gc_state
+static arraylist_t suspended_threads;
+void jl_mach_gc_begin(void)
+{
+    JL_LOCK_NOGC(gc_suspend);
+    jl_gc_safepoint_activated = 1;
+    JL_UNLOCK_NOGC(gc_suspend);
+}
+void jl_mach_gc_end(void)
+{
+    JL_LOCK_NOGC(gc_suspend);
+    jl_gc_safepoint_activated = 0;
+    for (size_t i = 0;i < suspended_threads.len;i++) {
+        uintptr_t item = (uintptr_t)suspended_threads.items[i];
+        int16_t tid = (int16_t)item;
+        int8_t gc_state = (int8_t)(item >> 8);
+        jl_all_task_states[tid].ptls->gc_state = gc_state;
+        thread_resume(pthread_mach_thread_np(jl_all_task_states[tid].system_id));
+    }
+    suspended_threads.len = 0;
+    JL_UNLOCK_NOGC(gc_suspend);
+}
+#endif
+
 static mach_port_t segv_port = 0;
 
 extern boolean_t exc_server(mach_msg_header_t *, mach_msg_header_t *);
@@ -36,6 +67,9 @@ void *mach_segv_listener(void *arg)
 
 static void allocate_segv_handler()
 {
+#ifdef JULIA_ENABLE_THREADING
+    arraylist_new(&suspended_threads, jl_n_threads);
+#endif
     pthread_t thread;
     pthread_attr_t attr;
     kern_return_t ret;
@@ -53,7 +87,9 @@ static void allocate_segv_handler()
         jl_error("pthread_create failed");
     }
     pthread_attr_destroy(&attr);
-    attach_exception_port();
+    for (int16_t tid = 0;tid < jl_n_threads;tid++) {
+        attach_exception_port(pthread_mach_thread_np(jl_all_task_states[tid].system_id));
+    }
 }
 
 #ifdef LIBOSXUNWIND
@@ -120,6 +156,31 @@ kern_return_t catch_exception_raise(mach_port_t            exception_port,
     kern_return_t ret = thread_get_state(thread, x86_EXCEPTION_STATE64, (thread_state_t)&exc_state, &exc_count);
     HANDLE_MACH_ERROR("thread_get_state", ret);
     uint64_t fault_addr = exc_state.__faultvaddr;
+#ifdef JULIA_ENABLE_THREADING
+    if (fault_addr == (uintptr_t)jl_gc_signal_page) {
+        JL_LOCK_NOGC(gc_suspend);
+        if (!jl_gc_safepoint_activated) {
+            // GC is done before we get the message, do nothing and return
+            JL_UNLOCK_NOGC(gc_suspend);
+            return KERN_SUCCESS;
+        }
+        // Otherwise, set the gc state of the thread, suspend and record it
+        for (int16_t tid = 0;tid < jl_n_threads;tid++) {
+            if (pthread_mach_thread_np(jl_all_task_states[tid].system_id) == thread) {
+                int8_t gc_state = jl_all_task_states[tid].ptls->gc_state;
+                jl_all_task_states[tid].ptls->gc_state = 1;
+                uintptr_t item = tid | (((uintptr_t)gc_state) << 16);
+                arraylist_push(&suspended_threads, (void*)item);
+                thread_suspend(thread);
+                JL_UNLOCK_NOGC(gc_suspend);
+                return KERN_SUCCESS;
+            }
+        }
+        JL_UNLOCK_NOGC(gc_suspend);
+        // Safepoint triggered on a unmanaged thread, complain and fall through
+        jl_safe_printf("ERROR: GC safepoint triggered on unmanaged thread.\n");
+    }
+#endif
 #ifdef SEGV_EXCEPTION
     if (1) {
 #else
@@ -153,11 +214,11 @@ kern_return_t catch_exception_raise(mach_port_t            exception_port,
     }
 }
 
-JL_DLLEXPORT void attach_exception_port(void)
+static void attach_exception_port(thread_port_t thread)
 {
     kern_return_t ret;
     // http://www.opensource.apple.com/source/xnu/xnu-2782.1.97/osfmk/man/thread_set_exception_ports.html
-    ret = thread_set_exception_ports(mach_thread_self(), EXC_MASK_BAD_ACCESS, segv_port, EXCEPTION_DEFAULT, MACHINE_THREAD_STATE);
+    ret = thread_set_exception_ports(thread, EXC_MASK_BAD_ACCESS, segv_port, EXCEPTION_DEFAULT, MACHINE_THREAD_STATE);
     HANDLE_MACH_ERROR("thread_set_exception_ports", ret);
 }
 
@@ -258,7 +319,7 @@ void *mach_profile_listener(void *arg)
     (void)arg;
     int i;
     const int max_size = 512;
-    attach_exception_port();
+    attach_exception_port(mach_thread_self());
 #ifdef LIBOSXUNWIND
     mach_profiler_thread = mach_thread_self();
 #endif
