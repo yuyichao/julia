@@ -82,7 +82,7 @@ function tryparse_internal{T<:Integer}(::Type{T}, s::AbstractString, startpos::I
     end
 
     base = convert(T,base)
-    m::T = div(typemax(T)-base+1,base)
+    m::T = T===UInt128 || T===Int128 ? typemax(T) : div(typemax(T)-base+1,base)
     n::T = 0
     while n <= m
         d::T = '0' <= c <= '9' ? c-'0'    :

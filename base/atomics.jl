@@ -31,7 +31,7 @@ unsafe_convert{T}(::Type{Ptr{T}}, x::Atomic{T}) = convert(Ptr{T}, pointer_from_o
 setindex!{T}(x::Atomic{T}, v) = setindex!(x, convert(T, v))
 
 for (typ, lt) in atomicintsmap
-    rt = VersionNumber(Base.libllvm_version) >= v"3.6" ? "$lt, $lt*" : "$lt*"
+    rt = "$lt*"
     @eval getindex(x::Atomic{$typ}) =
         llvmcall($"""
                 %rv = load atomic volatile $rt %0 monotonic, align $WORD_SIZE
@@ -42,7 +42,7 @@ for (typ, lt) in atomicintsmap
                 store atomic volatile $lt %1, $lt* %0 monotonic, align $WORD_SIZE
                 ret void
             """, Void, Tuple{Ptr{$typ},$typ}, unsafe_convert(Ptr{$typ}, x), v)
-    if VersionNumber(Base.libllvm_version) >= v"3.5"
+    if false #VersionNumber(Base.libllvm_version) >= v"3.5"
         @eval atomic_cas!(x::Atomic{$typ}, cmp::$typ, new::$typ) =
             llvmcall($"""
                      %rv = cmpxchg $lt* %0, $lt %1, $lt %2 acq_rel monotonic
