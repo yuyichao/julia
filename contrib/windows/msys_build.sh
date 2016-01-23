@@ -119,6 +119,7 @@ if [ -z "$USEMSVC" ]; then
     rm -f mingw$bits/bin/make.exe
   fi
   export AR=${CROSS_COMPILE}ar
+  echo 'override LLVM_CONFIG = $(JULIAHOME)/usr/bin/llvm-config.exe' >> Make.user
 
   f=llvm-3.7.1-$ARCH-w64-mingw32-juliadeps-r04.7z
 else
@@ -132,6 +133,7 @@ else
   echo 'override CXX = $(CC) -EHsc' >> Make.user
   echo "override AR = $AR" >> Make.user
   echo "override LD = $LD -DEBUG" >> Make.user
+  echo 'override LLVM_CONFIG = $(JULIAHOME)/usr/bin/llvm-config' >> Make.user
 
   f=llvm-3.3-$ARCH-msvc12-juliadeps.7z
 fi
@@ -140,8 +142,6 @@ checksum_download \
     "$f" "https://bintray.com/artifact/download/tkelman/generic/$f"
 echo "Extracting $f"
 $SEVENZIP x -y $f >> get-deps.log
-echo 'override LLVM_CONFIG := $(JULIAHOME)/usr/tools/llvm-config.exe' >> Make.user
-echo 'override LLVM_SIZE := $(JULIAHOME)/usr/tools/llvm-size.exe' >> Make.user
 
 if [ -z "`which make 2>/dev/null`" ]; then
   if [ -n "`uname | grep CYGWIN`" ]; then
