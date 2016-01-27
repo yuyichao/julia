@@ -199,6 +199,6 @@ fi
 echo 'FORCE_ASSERTIONS = 1' >> Make.user
 
 cat Make.user
-make -j3 VERBOSE=1
+make VERBOSE=1
 make build-stats
 #make debug
