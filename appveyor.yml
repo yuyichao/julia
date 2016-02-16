@@ -12,6 +12,7 @@ branches:
     - master
     - /release-.*/
     - tk/avmsvc
+    - yyc/tests/tk/avmsvc
 
 skip_commits:
 # Add [av skip] to commit messages for docfixes, etc to reduce load on queue
