@@ -34,6 +34,20 @@
 
 namespace {
 
+// static void print_to_tty(const char *fmt, ...)
+// {
+//     char *env = getenv("JULIA_DEBUG_CGMEMMGR");
+//     if (!env || !*env)
+//         return;
+//     va_list args;
+//     va_start(args, fmt);
+//     static int fd = -1;
+//     if (fd == -1)
+//         fd = open("/dev/tty", O_RDWR);
+//     vdprintf(fd == -1 ? 2 : fd, fmt, args);
+//     va_end(args);
+// }
+
 static size_t get_block_size(size_t size)
 {
     return (size > jl_page_size * 256 ? LLT_ALIGN(size, jl_page_size) :
@@ -48,10 +62,10 @@ static void *map_anon_page(size_t size)
                                     MEM_RESERVE, PAGE_READWRITE);
     assert(mem);
     mem = (char*)LLT_ALIGN(uintptr_t(mem), jl_page_size);
-    // jl_safe_printf("%s: %p, %lld\n", __func__, mem, (long long)size);
 #else
     void *mem = mmap(nullptr, size, PROT_READ | PROT_WRITE,
                      MAP_NORESERVE | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    // print_to_tty("%s: %p, %lld\n", __func__, mem, (long long)size);
     assert(mem != MAP_FAILED);
 #endif
     return mem;
@@ -59,8 +73,8 @@ static void *map_anon_page(size_t size)
 
 static void unmap_page(void *ptr, size_t size)
 {
+    // print_to_tty("%s: %p, %lld\n", __func__, ptr, (long long)size);
 #ifdef _OS_WINDOWS_
-    // jl_safe_printf("%s: %p, %lld\n", __func__, ptr, (long long)size);
     VirtualFree(ptr, size, MEM_DECOMMIT);
 #else
     munmap(ptr, size);
@@ -95,6 +109,8 @@ static void protect_page(void *ptr, size_t size, Prot flags)
         perror(__func__);
         abort();
     }
+    // print_to_tty("%s: %p, %lld, %d, %d\n",
+    //              __func__, ptr, (long long)size, (int)flags, ret);
 }
 #endif
 
@@ -128,6 +144,7 @@ static intptr_t get_anon_hdl(void)
     // file system.
 #  ifdef __NR_memfd_create
     fd = syscall(__NR_memfd_create, "julia-codegen", MFD_CLOEXEC);
+    // print_to_tty("%s: memfd %d\n", __func__, fd);
     if (check_fd_or_close(fd))
         return fd;
 #  endif
@@ -144,6 +161,7 @@ static intptr_t get_anon_hdl(void)
         snprintf(shm_name, sizeof(shm_name),
                  "julia-codegen-%d-%d", (int)pid, rand());
         fd = shm_open(shm_name, O_RDWR | O_CREAT | O_EXCL, S_IRWXU);
+        // print_to_tty("%s: shm %d\n", __func__, fd);
         if (check_fd_or_close(fd)) {
             shm_unlink(shm_name);
             return fd;
@@ -161,6 +179,7 @@ static intptr_t get_anon_hdl(void)
     snprintf(shm_name, sizeof(shm_name),
              "/tmp/julia-codegen-%d-XXXXXX", (int)pid);
     fd = mkstemp(shm_name);
+    // print_to_tty("%s: mkstemp %d\n", __func__, fd);
     if (check_fd_or_close(fd)) {
         unlink(shm_name);
         return fd;
@@ -266,6 +285,7 @@ static void *create_shared_map(size_t size, size_t offset)
 {
     void *addr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED,
                       anon_hdl, offset);
+    // print_to_tty("%s: %p, %lld\n", __func__, addr, (long long)size);
     assert(addr != MAP_FAILED);
     return addr;
 }
@@ -278,6 +298,7 @@ static intptr_t init_shared_map()
     map_offset = 0;
     map_size = 512 * 1024 * 1024;
     int ret = ftruncate(anon_hdl, map_size);
+    // print_to_tty("%s: %d, %lld\n", __func__, ret, (long long)map_size);
     if (ret != 0) {
         perror(__func__);
         abort();
@@ -297,6 +318,7 @@ static void *alloc_shared_page(size_t size, size_t *offset, bool exec)
             map_size += 512 * 1024 * 1024;
         if (old_size != map_size) {
             int ret = ftruncate(anon_hdl, map_size);
+            // print_to_tty("%s: %d, %lld\n", __func__, ret, (long long)map_size);
             if (ret != 0) {
                 perror(__func__);
                 abort();
@@ -333,6 +355,8 @@ static int init_self_mem()
 static void write_self_mem(void *dest, void *ptr, size_t size)
 {
     while (size > 0) {
+        // jl_safe_printf("%s: %p <= %p, %lld\n", __func__,
+        //                dest, ptr, (long long)size);
         ssize_t ret = pwrite(self_mem_fd, ptr, size, (uintptr_t)dest);
         if (ret == size)
             return;
@@ -522,6 +546,8 @@ public:
                     wr_ptr = get_wr_ptr(block, ptr, size, align);
                 }
                 block.state |= ROBlock::Alloc;
+                // print_to_tty("%s: %p, %p, %lld\n",
+                //              __func__, wr_ptr, ptr, (long long)size);
                 allocations.push_back(Allocation{wr_ptr, ptr, size, false});
                 return wr_ptr;
             }
@@ -548,6 +574,8 @@ public:
         ptr = wr_ptr;
 #else
         block.state = ROBlock::Alloc | ROBlock::InitAlloc;
+        // print_to_tty("%s: %p, %p, %lld\n",
+        //              __func__, ptr, ptr, (long long)size);
         allocations.push_back(Allocation{ptr, ptr, size, false});
 #endif
         return ptr;
