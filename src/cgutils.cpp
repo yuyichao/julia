@@ -956,7 +956,10 @@ static void raise_exception_unless(jl_codectx_t &ctx, Value *cond, Value *exc)
 {
     BasicBlock *failBB = BasicBlock::Create(jl_LLVMContext,"fail",ctx.f);
     BasicBlock *passBB = BasicBlock::Create(jl_LLVMContext,"pass");
-    ctx.builder.CreateCondBr(cond, passBB, failBB);
+    auto branch = ctx.builder.CreateCondBr(cond, passBB, failBB);
+    static auto make_implicit_md = MDNode::get(jl_LLVMContext, ArrayRef<Metadata*>());
+    if (!exc)
+        branch->setMetadata(LLVMContext::MD_make_implicit, make_implicit_md);
     ctx.builder.SetInsertPoint(failBB);
     raise_exception(ctx, exc, passBB);
 }
