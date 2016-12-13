@@ -710,6 +710,11 @@ JL_DLLEXPORT jl_value_t *jl_threading_run(jl_svec_t *args)
     return tw->ret;
 }
 
+void ti_wakeup_all(void)
+{
+    ti_threadgroup_wakeup_all(tgworld);
+}
+
 #if PROFILE_JL_THREADING
 
 void ti_reset_timings(void)
@@ -781,6 +786,10 @@ void jl_init_threading(void)
 }
 
 void jl_start_threads(void) { }
+
+void ti_wakeup_all(void)
+{
+}
 
 #endif // !JULIA_ENABLE_THREADING
 

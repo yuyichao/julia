@@ -40,7 +40,7 @@ static int jl_mach_gc_wait(jl_ptls_t ptls2,
                            mach_port_t thread, int16_t tid)
 {
     jl_mutex_lock_nogc(&safepoint_lock);
-    if (!jl_gc_running) {
+    if (!jl_atomic_load_acquire(&jl_gc_phase)) {
         // GC is done before we get the message or the safepoint is enabled
         // for SIGINT.
         jl_mutex_unlock_nogc(&safepoint_lock);

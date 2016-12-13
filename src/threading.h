@@ -51,6 +51,7 @@ void ti_threadfun(void *arg);
 
 // helpers for thread function
 jl_value_t *ti_runthread(jl_function_t *f, jl_svec_t *args, size_t nargs);
+void ti_wakeup_all(void);
 
 #ifdef __cplusplus
 }

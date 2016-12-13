@@ -116,6 +116,16 @@ int ti_threadgroup_size(ti_threadgroup_t *tg, int16_t *tgsize)
     return 0;
 }
 
+void ti_threadgroup_wakeup_all(ti_threadgroup_t *tg)
+{
+    // if it's possible that threads are sleeping, signal them
+    if (tg->sleep_threshold) {
+        uv_mutex_lock(&tg->alarm_lock);
+        uv_cond_broadcast(&tg->alarm);
+        uv_mutex_unlock(&tg->alarm_lock);
+    }
+}
+
 int ti_threadgroup_fork(ti_threadgroup_t *tg, int16_t ext_tid, void **bcast_val)
 {
     uint8_t *group_sense = &tg->group_sense;
@@ -125,13 +135,7 @@ int ti_threadgroup_fork(ti_threadgroup_t *tg, int16_t ext_tid, void **bcast_val)
         tg->envelope = bcast_val ? *bcast_val : NULL;
         // synchronize `tg->envelope` and `tg->group_sense`
         jl_atomic_store_release(group_sense, thread_sense);
-
-        // if it's possible that threads are sleeping, signal them
-        if (tg->sleep_threshold) {
-            uv_mutex_lock(&tg->alarm_lock);
-            uv_cond_broadcast(&tg->alarm);
-            uv_mutex_unlock(&tg->alarm_lock);
-        }
+        ti_threadgroup_wakeup_all(tg);
     }
     else {
         // spin up to threshold ns (count sheep), then sleep
@@ -139,6 +143,7 @@ int ti_threadgroup_fork(ti_threadgroup_t *tg, int16_t ext_tid, void **bcast_val)
         uint64_t spin_start = 0;
         // synchronize `tg->envelope` and `tg->group_sense`
         while (jl_atomic_load_acquire(group_sense) != thread_sense) {
+            jl_gc_mark_worker();
             if (tg->sleep_threshold) {
                 if (!spin_start) {
                     // Lazily initialize spin_start since uv_hrtime is expensive

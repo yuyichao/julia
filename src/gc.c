@@ -1850,6 +1850,14 @@ static void jl_gc_mark_ptrfree(jl_ptls_t ptls)
     jl_gc_setmark(ptls, jl_false);
 }
 
+void jl_gc_mark_worker(void)
+{
+    if (jl_gc_phase != JL_GC_MARK)
+        return;
+    while (jl_atomic_load_acquire(&jl_gc_phase) == JL_GC_MARK) {
+    }
+}
+
 // Only one thread should be running in this function
 static int _jl_gc_collect(jl_ptls_t ptls, int full)
 {
@@ -1899,6 +1907,7 @@ static int _jl_gc_collect(jl_ptls_t ptls, int full)
     // "Flush" the mark stack before flipping the reset_age bit
     // so that the objects are not incorrectly resetted.
     visit_mark_stack(ptls);
+    jl_atomic_store_release(&jl_gc_phase, JL_GC_SWEEP);
     mark_reset_age = 1;
     // Reset the age and old bit for any unmarked objects referenced by the
     // `to_finalize` list. These objects are only reachable from this list
@@ -2024,6 +2033,7 @@ JL_DLLEXPORT void jl_gc_collect(int full)
         return;
     }
     JL_TIMING(GC);
+    ti_wakeup_all();
     // Now we are ready to wait for other threads to hit the safepoint,
     // we can do a few things that doesn't require synchronization.
     jl_gc_mark_ptrfree(ptls);

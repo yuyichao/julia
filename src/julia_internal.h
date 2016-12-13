@@ -421,7 +421,12 @@ STATIC_INLINE int jl_addr_is_safepoint(uintptr_t addr)
     uintptr_t safepoint_addr = (uintptr_t)jl_safepoint_pages;
     return addr >= safepoint_addr && addr < safepoint_addr + jl_page_size * 3;
 }
-extern volatile uint32_t jl_gc_running;
+enum {
+    JL_GC_NONE = 0,
+    JL_GC_MARK,
+    JL_GC_SWEEP,
+};
+extern uint32_t jl_gc_phase;
 // All the functions are safe to be called from within a signal handler
 // provided that the thread will not be interrupted by another asynchronous
 // signal.
@@ -471,6 +476,7 @@ static inline void jl_set_gc_and_wait(void)
     jl_atomic_store_release(&ptls->gc_state, state);
 }
 #endif
+void jl_gc_mark_worker(void);
 
 void jl_dump_native(const char *bc_fname, const char *obj_fname, const char *sysimg_data, size_t sysimg_len);
 int32_t jl_get_llvm_gv(jl_value_t *p);

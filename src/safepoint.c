@@ -18,7 +18,7 @@ extern "C" {
 // 1: at least one sigint is pending, only the sigint page is enabled.
 // 2: at least one sigint is pending, both safepoint pages are enabled.
 JL_DLLEXPORT sig_atomic_t jl_signal_pending = 0;
-volatile uint32_t jl_gc_running = 0;
+uint32_t jl_gc_phase = JL_GC_NONE;
 char *jl_safepoint_pages = NULL;
 // The number of safepoints enabled on the three pages.
 // The first page, is the SIGINT page, only used by the master thread.
@@ -34,11 +34,11 @@ uint8_t jl_safepoint_enable_cnt[3] = {0, 0, 0};
 // This lock should be acquired before enabling/disabling the safepoint
 // or accessing one of the following variables:
 //
-// * jl_gc_running
+// * jl_gc_phase
 // * jl_signal_pending
 // * jl_safepoint_enable_cnt
 //
-// Additionally accessing `jl_gc_running` should use acquire/release
+// Additionally accessing `jl_gc_phase` should use acquire/release
 // load/store so that threads waiting for the GC doesn't have to also
 // fight on the safepoint lock...
 //
@@ -117,7 +117,7 @@ int jl_safepoint_start_gc(void)
     // one of them to actually run the collection. We can't just let the
     // master thread do the GC since it might be running unmanaged code
     // and can take arbitrarily long time before hitting a safe point.
-    if (jl_atomic_compare_exchange(&jl_gc_running, 0, 1) != 0) {
+    if (jl_atomic_compare_exchange(&jl_gc_phase, JL_GC_NONE, JL_GC_MARK) != 0) {
         jl_mutex_unlock_nogc(&safepoint_lock);
         jl_safepoint_wait_gc();
         return 0;
@@ -128,16 +128,16 @@ int jl_safepoint_start_gc(void)
     return 1;
 #else
     // For single thread, GC should not call itself (in finalizers) before
-    // setting `jl_gc_running` to false so this should never happen.
-    assert(!jl_gc_running);
-    jl_gc_running = 1;
+    // setting `jl_gc_phase` to JL_GC_NONE so this should never happen.
+    assert(!jl_gc_phase);
+    jl_gc_phase = JL_GC_MARK;
     return 1;
 #endif
 }
 
 void jl_safepoint_end_gc(void)
 {
-    assert(jl_gc_running);
+    assert(jl_atomic_load_acquire(&jl_gc_phase));
 #ifdef JULIA_ENABLE_THREADING
     jl_mutex_lock_nogc(&safepoint_lock);
     // Need to reset the page protection before resetting the flag since
@@ -145,14 +145,14 @@ void jl_safepoint_end_gc(void)
     // the signal handler.
     jl_safepoint_disable(2);
     jl_safepoint_disable(1);
-    jl_atomic_store_release(&jl_gc_running, 0);
+    jl_atomic_store_release(&jl_gc_phase, JL_GC_NONE);
 #  ifdef __APPLE__
     // This wakes up other threads on mac.
     jl_mach_gc_end();
 #  endif
     jl_mutex_unlock_nogc(&safepoint_lock);
 #else
-    jl_gc_running = 0;
+    jl_gc_phase = JL_GC_NONE;
 #endif
 }
 
@@ -163,7 +163,8 @@ void jl_safepoint_wait_gc(void)
     assert(jl_get_ptls_states()->gc_state != 0);
     // Use normal volatile load in the loop.
     // Use a acquire load to make sure the GC result is visible on this thread.
-    while (jl_gc_running || jl_atomic_load_acquire(&jl_gc_running)) {
+    while (jl_gc_phase || jl_atomic_load_acquire(&jl_gc_phase)) {
+        jl_gc_mark_worker();
         jl_cpu_pause(); // yield?
     }
 #else

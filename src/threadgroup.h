@@ -40,5 +40,6 @@ int ti_threadgroup_fork(ti_threadgroup_t *tg, int16_t ext_tid,
                         void **bcast_val);
 int ti_threadgroup_join(ti_threadgroup_t *tg, int16_t ext_tid);
 int ti_threadgroup_destroy(ti_threadgroup_t *tg);
+void ti_threadgroup_wakeup_all(ti_threadgroup_t *tg);
 
 #endif  /* THREADGROUP_H */
