@@ -466,7 +466,7 @@ static inline void jl_set_gc_and_wait(void)
     // reading own gc state doesn't need atomic ops since no one else
     // should store to it.
     int8_t state = jl_gc_state(ptls);
-    jl_atomic_store_release(&ptls->gc_state, JL_GC_STATE_WAITING);
+    jl_atomic_store_release(&ptls->gc_state, JL_GC_STATE_PAUSED);
     jl_safepoint_wait_gc();
     jl_atomic_store_release(&ptls->gc_state, state);
 }

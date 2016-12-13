@@ -92,12 +92,16 @@ typedef struct _jl_tls_states_t {
     struct _jl_value_t *exception_in_transit;
     volatile size_t *safepoint;
     // Whether it is safe to execute GC at the same time.
-#define JL_GC_STATE_WAITING 1
+#define JL_GC_STATE_PAUSED 1
     // gc_state = 1 means the thread is doing GC or is waiting for the GC to
     //              finish.
 #define JL_GC_STATE_SAFE 2
     // gc_state = 2 means the thread is running unmanaged code that can be
     //              execute at the same time with the GC.
+#define JL_GC_STATE_MARK_DONE 3
+    // gc_state = 3 means the thread has finish running parallel marking.
+#define JL_GC_STATE_BLOCKED 4
+    // gc_state = 4 means the thread is blocked waiting for jobs.
     volatile int8_t gc_state;
     volatile int8_t in_finalizer;
     int8_t disable_gc;

@@ -2015,12 +2015,12 @@ JL_DLLEXPORT void jl_gc_collect(int full)
     gc_debug_print();
 
     int8_t old_state = jl_gc_state(ptls);
-    ptls->gc_state = JL_GC_STATE_WAITING;
+    ptls->gc_state = JL_GC_STATE_PAUSED;
     // `jl_safepoint_start_gc()` makes sure only one thread can
     // run the GC.
     if (!jl_safepoint_start_gc()) {
         // Multithread only. See assertion in `safepoint.c`
-        jl_gc_state_set(ptls, old_state, JL_GC_STATE_WAITING);
+        jl_gc_state_set(ptls, old_state, JL_GC_STATE_PAUSED);
         return;
     }
     JL_TIMING(GC);
@@ -2043,7 +2043,7 @@ JL_DLLEXPORT void jl_gc_collect(int full)
 
     // no-op for non-threading
     jl_safepoint_end_gc();
-    jl_gc_state_set(ptls, old_state, JL_GC_STATE_WAITING);
+    jl_gc_state_set(ptls, old_state, JL_GC_STATE_PAUSED);
 
     // Only disable finalizers on current thread
     // Doing this on all threads is racy (it's impossible to check

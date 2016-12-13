@@ -111,7 +111,7 @@ int jl_safepoint_start_gc(void)
 {
 #ifdef JULIA_ENABLE_THREADING
     // The thread should have set this already
-    assert(jl_get_ptls_states()->gc_state == JL_GC_STATE_WAITING);
+    assert(jl_get_ptls_states()->gc_state == JL_GC_STATE_PAUSED);
     jl_mutex_lock_nogc(&safepoint_lock);
     // In case multiple threads enter the GC at the same time, only allow
     // one of them to actually run the collection. We can't just let the

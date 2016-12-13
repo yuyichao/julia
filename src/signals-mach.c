@@ -48,7 +48,7 @@ static int jl_mach_gc_wait(jl_ptls_t ptls2,
     }
     // Otherwise, set the gc state of the thread, suspend and record it
     int8_t gc_state = ptls2->gc_state;
-    jl_atomic_store_release(&ptls2->gc_state, JL_GC_STATE_WAITING);
+    jl_atomic_store_release(&ptls2->gc_state, JL_GC_STATE_PAUSED);
     uintptr_t item = tid | (((uintptr_t)gc_state) << 16);
     arraylist_push(&suspended_threads, (void*)item);
     thread_suspend(thread);
