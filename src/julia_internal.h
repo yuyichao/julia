@@ -423,7 +423,15 @@ STATIC_INLINE int jl_addr_is_safepoint(uintptr_t addr)
 }
 enum {
     JL_GC_NONE = 0,
+    // Everything before marking and doesn't need to wait for the world to stop.
+    JL_GC_PREMARK,
+    // Waiting for the world
+    JL_GC_PREMARK_DONE,
+    // Parallel marking
     JL_GC_MARK,
+    // Blocking in the mark queue for more work
+    JL_GC_MARK_WAIT,
+    // This mark the start of the sweep phase.
     JL_GC_SWEEP,
 };
 extern uint32_t jl_gc_phase;

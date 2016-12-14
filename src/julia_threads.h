@@ -98,10 +98,14 @@ typedef struct _jl_tls_states_t {
 #define JL_GC_STATE_SAFE 2
     // gc_state = 2 means the thread is running unmanaged code that can be
     //              execute at the same time with the GC.
-#define JL_GC_STATE_MARK_DONE 3
-    // gc_state = 3 means the thread has finish running parallel marking.
-#define JL_GC_STATE_BLOCKED 4
+#define JL_GC_STATE_MARKING 3
+    // gc_state = 3 means the thread is running parallel marking.
+#define JL_GC_STATE_MARK_WAITING 4
     // gc_state = 4 means the thread is blocked waiting for jobs.
+    //              (or otherwise not having pending work to do)
+#define JL_GC_STATE_MARK_DONE 5
+    // gc_state = 5 means the thread is done marking and waiting
+    //              for the GC to finish.
     volatile int8_t gc_state;
     volatile int8_t in_finalizer;
     int8_t disable_gc;
@@ -140,6 +144,7 @@ typedef struct _jl_tls_states_t {
     // Counter to disable finalizer **on the current thread**
     int finalizers_inhibited;
     arraylist_t finalizers;
+    uint32_t gc_phase;
     jl_gc_mark_cache_t gc_cache;
 } jl_tls_states_t;
 typedef jl_tls_states_t *jl_ptls_t;

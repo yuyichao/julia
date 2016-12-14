@@ -266,6 +266,7 @@ static void ti_initthread(int16_t tid)
     ptls->tid = tid;
     ptls->pgcstack = NULL;
     ptls->gc_state = 0; // GC unsafe
+    ptls->gc_phase = JL_GC_NONE;
     ptls->gc_cache.perm_scanned_bytes = 0;
     ptls->gc_cache.scanned_bytes = 0;
     ptls->gc_cache.nbig_obj = 0;

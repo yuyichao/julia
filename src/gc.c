@@ -1231,6 +1231,7 @@ JL_DLLEXPORT void jl_gc_queue_root(jl_value_t *ptr)
     // should be safe here since GC is not allowed to run here and we only
     // write GC_OLD to the GC bits outside GC. This could cause
     // duplicated objects in the remset but that shouldn't be a problem.
+    // TODO: Should in principle be a atomic_store_relaxed
     o->bits.gc = GC_MARKED;
     arraylist_push(ptls->heap.remset, ptr);
     ptls->heap.remset_nptr++; // conservative
@@ -1244,6 +1245,7 @@ void gc_queue_binding(jl_binding_t *bnd)
     // Will fail for multithreading. See `jl_gc_queue_root`
     assert(buf->bits.gc == GC_OLD_MARKED);
 #endif
+    // TODO: Should in principle be a atomic_store_relaxed
     buf->bits.gc = GC_MARKED;
     arraylist_push(&ptls->heap.rem_bindings, bnd);
 }
@@ -1794,6 +1796,9 @@ void jl_gc_sync_total_bytes(void) {last_gc_total_bytes = jl_gc_total_bytes();}
 static void jl_gc_premark(jl_ptls_t ptls2)
 {
     arraylist_t *remset = ptls2->heap.remset;
+    if (jl_atomic_compare_exchange(&ptls2->gc_phase, JL_GC_NONE,
+                                   JL_GC_PREMARK) != JL_GC_NONE)
+        return;
     ptls2->heap.remset = ptls2->heap.last_remset;
     ptls2->heap.last_remset = remset;
     ptls2->heap.remset->len = 0;
@@ -1806,14 +1811,17 @@ static void jl_gc_premark(jl_ptls_t ptls2)
     for (size_t i = 0; i < len; i++) {
         jl_value_t *item = (jl_value_t*)items[i];
         objprofile_count(jl_typeof(item), 2, 0);
+        // TODO: Should in principle be a atomic_store_relaxed
         jl_astaggedvalue(item)->bits.gc = GC_OLD_MARKED;
     }
     len = ptls2->heap.rem_bindings.len;
     items = ptls2->heap.rem_bindings.items;
     for (size_t i = 0; i < len; i++) {
         void *ptr = items[i];
+        // TODO: Should in principle be a atomic_store_relaxed
         jl_astaggedvalue(ptr)->bits.gc = GC_OLD_MARKED;
     }
+    jl_atomic_store_release(&ptls2->gc_phase, JL_GC_PREMARK_DONE);
 }
 
 static void jl_gc_mark_remset(jl_ptls_t ptls, jl_ptls_t ptls2)
@@ -1852,9 +1860,27 @@ static void jl_gc_mark_ptrfree(jl_ptls_t ptls)
 
 void jl_gc_mark_worker(void)
 {
-    if (jl_gc_phase != JL_GC_MARK)
-        return;
+    jl_ptls_t ptls = jl_get_ptls_states();
+    // Before marking starts, only do things that's thread local
+    jl_gc_premark(ptls);
+    while (jl_atomic_load_acquire(&jl_gc_phase) < JL_GC_MARK) {
+        // `jl_gc_phase` should not go back to `JL_GC_PREMARK` or `JL_GC_NONE`
+        // after reaching `JL_GC_PREMARK_DONE` before waiting for ACK from
+        // worker threads
+        jl_cpu_pause();
+    }
+    jl_atomic_store_release(&ptls->gc_state, JL_GC_STATE_MARKING);
+    // For now directly info the main GC thread that we are not doing any
+    // useful work.
+    jl_atomic_store_release(&ptls->gc_state, JL_GC_STATE_MARK_WAITING);
     while (jl_atomic_load_acquire(&jl_gc_phase) == JL_GC_MARK) {
+        // TODO actually do work
+        jl_cpu_pause();
+    }
+    // Tell the main thread that we are ready to exit the GC
+    jl_atomic_store_release(&ptls->gc_state, JL_GC_STATE_MARK_DONE);
+    while (jl_atomic_load_acquire(&jl_gc_phase) > JL_GC_MARK) {
+        jl_cpu_pause();
     }
 }
 
@@ -1864,10 +1890,22 @@ static int _jl_gc_collect(jl_ptls_t ptls, int full)
     uint64_t t0 = jl_hrtime();
     int64_t last_perm_scanned_bytes = perm_scanned_bytes;
     assert(mark_sp == 0);
+    uint16_t tid = ptls->tid;
 
     // 1. fix GC bits of objects in the remset.
     for (int t_i = 0; t_i < jl_n_threads; t_i++)
         jl_gc_premark(jl_all_tls_states[t_i]);
+
+    jl_atomic_store_release(&jl_gc_phase, JL_GC_PREMARK_DONE);
+    for (int t_i = 0;t_i < jl_n_threads;t_i++) {
+        if (t_i == tid)
+            continue;
+        jl_ptls_t ptls2 = jl_all_tls_states[t_i];
+        while (jl_atomic_load_acquire(&ptls2->gc_phase) != JL_GC_PREMARK_DONE) {
+            jl_cpu_pause();
+        }
+    }
+    jl_atomic_store_release(&jl_gc_phase, JL_GC_MARK);
 
     for (int t_i = 0; t_i < jl_n_threads; t_i++) {
         jl_ptls_t ptls2 = jl_all_tls_states[t_i];
@@ -1880,6 +1918,22 @@ static int _jl_gc_collect(jl_ptls_t ptls, int full)
     // 3. walk roots
     mark_roots(ptls);
     visit_mark_stack(ptls);
+
+    jl_atomic_store_release(&jl_gc_phase, JL_GC_MARK_WAIT);
+    for (int t_i = 0;t_i < jl_n_threads;t_i++) {
+        if (t_i == tid)
+            continue;
+        jl_ptls_t ptls2 = jl_all_tls_states[t_i];
+        while (1) {
+            uint8_t gc_state = jl_atomic_load_acquire(&ptls2->gc_state);
+            if (gc_state == JL_GC_STATE_SAFE ||
+                gc_state >= JL_GC_STATE_MARK_WAITING) {
+                break;
+            }
+        }
+    }
+    jl_atomic_store_release(&jl_gc_phase, JL_GC_SWEEP);
+
     gc_num.since_sweep += gc_num.allocd + (int64_t)gc_num.interval;
     gc_settime_premark_end();
     gc_time_mark_pause(t0, scanned_bytes, perm_scanned_bytes);
@@ -2010,6 +2064,21 @@ static int _jl_gc_collect(jl_ptls_t ptls, int full)
     gc_num.since_sweep = 0;
     gc_num.freed = 0;
 
+    jl_atomic_store_release(&ptls->gc_phase, JL_GC_NONE);
+    for (int t_i = 0;t_i < jl_n_threads;t_i++) {
+        if (t_i == tid)
+            continue;
+        jl_ptls_t ptls2 = jl_all_tls_states[t_i];
+        while (1) {
+            uint8_t gc_state = jl_atomic_load_acquire(&ptls2->gc_state);
+            if (gc_state == JL_GC_STATE_SAFE ||
+                gc_state >= JL_GC_STATE_MARK_DONE) {
+                jl_atomic_store_release(&ptls2->gc_phase, JL_GC_NONE);
+                break;
+            }
+        }
+    }
+
     return recollect;
 }
 
@@ -2026,7 +2095,7 @@ JL_DLLEXPORT void jl_gc_collect(int full)
     int8_t old_state = jl_gc_state(ptls);
     ptls->gc_state = JL_GC_STATE_PAUSED;
     // `jl_safepoint_start_gc()` makes sure only one thread can
-    // run the GC.
+    // run the GC. This sets the global gc_phase to `JL_GC_PREMARK`
     if (!jl_safepoint_start_gc()) {
         // Multithread only. See assertion in `safepoint.c`
         jl_gc_state_set(ptls, old_state, JL_GC_STATE_PAUSED);
@@ -2037,16 +2106,22 @@ JL_DLLEXPORT void jl_gc_collect(int full)
     // Now we are ready to wait for other threads to hit the safepoint,
     // we can do a few things that doesn't require synchronization.
     jl_gc_mark_ptrfree(ptls);
+    jl_gc_premark(ptls);
     // no-op for non-threading
     jl_gc_wait_for_the_world();
 
     if (!jl_gc_disable_counter) {
         JL_LOCK_NOGC(&finalizers_lock);
         if (_jl_gc_collect(ptls, full)) {
+            jl_atomic_store_release(&jl_gc_phase, JL_GC_PREMARK);
             jl_gc_mark_ptrfree(ptls);
             int ret = _jl_gc_collect(ptls, 0);
             (void)ret;
             assert(!ret);
+        }
+        for (int t_i = 0;t_i < jl_n_threads;t_i++) {
+            jl_ptls_t ptls2 = jl_all_tls_states[t_i];
+            jl_atomic_store_release(&ptls2->gc_phase, JL_GC_NONE);
         }
         JL_UNLOCK_NOGC(&finalizers_lock);
     }
