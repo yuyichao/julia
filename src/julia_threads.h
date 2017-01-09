@@ -28,6 +28,12 @@
 #endif
 #include <signal.h>
 
+// Recursive spin lock
+typedef struct {
+    volatile unsigned long owner;
+    uint32_t count;
+} jl_mutex_t;
+
 typedef struct {
     jl_taggedvalue_t *freelist;   // root of list of free objects
     jl_taggedvalue_t *newpages;   // root of list of chunks of free objects
@@ -82,6 +88,30 @@ typedef struct {
     // this makes sure that a single objects can only appear once in
     // the lists (the mark bit cannot be flipped to `0` without sweeping)
     void *big_obj[1024];
+    // `qstart == qend` means that the queue is empty
+    // `qstart % qlen == (qend + 1) % qlen` means that the queue is full and the
+    // next push will grow the buffer.
+    // queue: Head of the mark queue. Real type is `gc_mark_work_t*`.
+    //   Only read without lock only by owning thread
+    //   Read by other threads or write by owning thread with lock.
+    void *queue;
+    // qlen: Number of `gc_mark_work_t` of the mark queue buffer.
+    //   Read without lock by all threads (fast check only for other threads)
+    //   Write with lock by owning thread
+    size_t qlen;
+    // qstart: the index of the first item in the buffer, this is the item
+    //   stolen the first by other threads.
+    //   Read without lock by other threads (fast check only)
+    //   Write with lock by all threads
+    size_t qstart;
+    // qend: the index of the end in the buffer, this is the slot that a push
+    //   from the owning thread is going to fill in.
+    //   Read without lock by all threads (fast check only for other threads)
+    //   Write without lock by owning threads.
+    size_t qend;
+    jl_mutex_t qlock;
+    // Random number seed
+    unsigned qseed;
 } jl_gc_mark_cache_t;
 
 // This includes all the thread local states we care about for a thread.
@@ -511,12 +541,6 @@ JL_DLLEXPORT void (jl_gc_safepoint)(void);
             jl_sigint_safepoint(jl_get_ptls_states());          \
         }                                                       \
     } while (0)
-
-// Recursive spin lock
-typedef struct {
-    volatile unsigned long owner;
-    uint32_t count;
-} jl_mutex_t;
 
 JL_DLLEXPORT void jl_gc_enable_finalizers(jl_ptls_t ptls, int on);
 static inline void jl_lock_frame_push(jl_mutex_t *lock);

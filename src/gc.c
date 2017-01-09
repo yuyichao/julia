@@ -1196,7 +1196,83 @@ static void gc_sweep_pool(int sweep_full)
     gc_time_pool_end(sweep_full);
 }
 
+/**
+ * Parallel marking synchronization
+ * There are multiple variables that are used to synchronize GC parallel marking
+ *
+ * * `ptls->gc_phase` is used to indicate the progress on the thread's local data.
+ *   This is stored to by other threads if the work is not done by the owning
+ *   thread.
+ * * `ptls->gc_state` is used to indicate what code a thread is running and
+ *   can only be written by the same thread. Other threads can read this value
+ *   in order to examine the progress of the thread.
+ * * `jl_gc_nmarking` is a global counter of the number of thread currently
+ *   running parallel marking. This does not include threads that are waiting on
+ *   the mark queue.
+ */
+
 // mark phase
+
+// If `sz` is 0, `obj` is a `jl_taggedvalue_t*`.
+// If `sz` is not 0, `obj` is an array of `jl_taggedvalue_t*` of length `sz`.
+typedef struct {
+    void *obj;
+    size_t sz;
+} gc_mark_work_t;
+
+static uint16_t gc_rand_tid(jl_ptls_t ptls)
+{
+    uint16_t i = rand_r(&ptls->gc_cache.qseed) % (jl_n_threads - 1);
+    if (i < ptls->tid)
+        return i;
+    return i + 1;
+}
+
+static inline int gc_mark_stack_full(jl_gc_mark_cache_t *cache)
+{
+    int mask = (cache->qlen - 1);
+    return ((cache->qstart - cache->qend - 1) & mask) == 0;
+}
+
+// The caller is expected to call this function only when the the queue is full
+// and should fill the new item into the empty slot before calling this function.
+// If the queue is not full anymore, the function will increment the qend
+// and return. If the queue is still full, the function will double the buffer
+// size and reset qstart to 0 (and set qend correspondingly).
+static void gc_try_grow_mark_stack(jl_gc_mark_cache_t *cache)
+{
+    jl_mutex_lock_nogc(&cache->qlock);
+    if (__unlikely(!gc_mark_stack_full(cache))) {
+        cache->qend += 1;
+        jl_mutex_unlock_nogc(&cache->qlock);
+        return;
+    }
+    size_t old_len = cache->qlen;
+    size_t new_len = old_len * 2;
+    cache->qstart = 0;
+    cache->qend = old_len;
+    cache->qlen = new_len;
+    jl_mutex_unlock_nogc(&cache->qlock);
+}
+
+static void gc_push_mark_stack(jl_ptls_t ptls, void *obj, size_t sz)
+{
+    // The qend slot is always empty.
+    jl_gc_mark_cache_t *cache = &ptls->gc_cache;
+    gc_mark_work_t *buff = (gc_mark_work_t*)cache->queue;
+    gc_mark_work_t *slot = &buff[cache->qend];
+    slot->obj = obj;
+    slot->sz = sz;
+    if (__unlikely(gc_mark_stack_full(cache))) {
+        gc_try_grow_mark_stack(cache);
+    }
+}
+
+// Try to pop an item from the mark queue
+// First try to pop it from the local queue,
+static void *gc_pop_mark_stack(jl_ptls_t ptls, size_t *sz)
+{
+}
 
 static jl_value_t **mark_stack = NULL;
 static jl_value_t **mark_stack_base = NULL;
@@ -2179,6 +2255,14 @@ void jl_mk_thread_heap(jl_ptls_t ptls)
     arraylist_new(heap->remset, 0);
     arraylist_new(heap->last_remset, 0);
     arraylist_new(&ptls->finalizers, 0);
+
+    jl_gc_mark_cache_t *cache = &ptls->gc_cache;
+    ptls->gc_cache.perm_scanned_bytes = 0;
+    ptls->gc_cache.scanned_bytes = 0;
+    ptls->gc_cache.nbig_obj = 0;
+    cache->qseed = (unsigned)uv_hrtime() + (((unsigned)ptls->tid) << 16);
+    cache->qlen = 4096; // must be power of 2
+    cache->queue = malloc(sizeof(gc_mark_work_t) * cache->qlen);
 }
 
 // System-wide initializations
