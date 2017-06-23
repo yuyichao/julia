@@ -400,7 +400,7 @@ ifneq ($(OS), WINNT)
 JCXXFLAGS += -pedantic
 endif
 DEBUGFLAGS := -O0 -ggdb2 -DJL_DEBUG_BUILD -fstack-protector-all
-SHIPFLAGS := -O3 -ggdb2 -falign-functions
+SHIPFLAGS := -Og -ggdb2 -falign-functions
 endif
 
 ifeq ($(USECLANG),1)
@@ -411,7 +411,7 @@ JCFLAGS := -pipe $(fPIC) -fno-strict-aliasing -D_FILE_OFFSET_BITS=64
 JCPPFLAGS := -fasynchronous-unwind-tables
 JCXXFLAGS := -pipe $(fPIC) -fno-rtti -pedantic
 DEBUGFLAGS := -O0 -g -DJL_DEBUG_BUILD -fstack-protector-all
-SHIPFLAGS := -O3 -g
+SHIPFLAGS := -Og -g
 ifeq ($(OS), Darwin)
 ifeq ($(USE_LIBCPP), 1)
 MACOSX_VERSION_MIN := 10.8
@@ -440,7 +440,7 @@ JCFLAGS := -std=gnu11 -pipe $(fPIC) -fno-strict-aliasing -D_FILE_OFFSET_BITS=64 
 JCPPFLAGS :=
 JCXXFLAGS := -pipe $(fPIC) -fno-rtti
 DEBUGFLAGS := -O0 -g -DJL_DEBUG_BUILD -fstack-protector-all
-SHIPFLAGS := -O3 -g -falign-functions
+SHIPFLAGS := -Og -g -falign-functions
 endif
 
 ifeq ($(USECCACHE), 1)

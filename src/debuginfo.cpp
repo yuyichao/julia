@@ -1029,6 +1029,23 @@ bool jl_dylib_DI_for_fptr(size_t pointer, const llvm::object::ObjectFile **obj, 
     return true;
 }
 
+JL_DLLEXPORT void jl_llvm_dump_all_symbols(const object::ObjectFile *object)
+{
+    for (auto sym: object->symbols()) {
+        auto addr = sym.getAddress();
+        if (!addr)
+            continue;
+        uintptr_t symptr = addr.get();
+        auto name = sym.getName();
+        if (name) {
+            jl_safe_printf("%s: %p\n", name.get().str().c_str(), (void*)symptr);
+        }
+        else {
+            jl_safe_printf("(no name): %p\n", (void*)symptr);
+        }
+    }
+}
+
 // *name and *filename should be either NULL or malloc'd pointer
 static int jl_getDylibFunctionInfo(jl_frame_t **frames, size_t pointer, int skipC, int noInline)
 {
