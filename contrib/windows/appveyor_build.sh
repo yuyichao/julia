@@ -53,6 +53,7 @@ else
   echo 'LIBBLAS = -L$(JULIAHOME)/usr/bin -lopenblas' >> Make.user
   echo 'LIBBLASNAME = libopenblas' >> Make.user
 fi
+echo "override JULIA_CPU_TARGET=generic;generic,sse4.2;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(2);cannonlake,base(2)" >> Make.user
 
 # Set XC_HOST if in Cygwin or Linux
 case $(uname) in

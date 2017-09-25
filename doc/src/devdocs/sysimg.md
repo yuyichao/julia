@@ -38,3 +38,8 @@ and `force` set to `true`, one would execute:
 ```
 julia build_sysimg.jl /tmp/sys core2 ~/userimg.jl --force
 ```
+
+## System image optimized for multiple microarchitectures
+
+The system image can be compiled simultaneously for multiple CPU microarchitectures
+under the same instruction set architecture (ISA).

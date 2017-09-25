@@ -31,6 +31,7 @@ jobs:
           fi &&
           make -C base version_git.jl.phony &&
           echo "override ARCH = $ARCH" | tee -a Make.user &&
+          echo "override JULIA_CPU_TARGET=generic;generic,sse4.2;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(2);cannonlake,base(2)" | tee -a Make.user &&
           for var in FORCE_ASSERTIONS LLVM_ASSERTIONS USECCACHE NO_GIT; do
             echo "override $var = 1" | tee -a Make.user;
           done &&
