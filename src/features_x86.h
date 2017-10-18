@@ -30,19 +30,19 @@ JL_FEATURE_DEF(rdrnd, 30, 0)
 JL_FEATURE_DEF(fsgsbase, 32 * 2 + 0, 0)
 // JL_FEATURE_DEF(sgx, 32 * 2 + 2, 0) // Disable for now since it's very hard to detect
 JL_FEATURE_DEF(bmi, 32 * 2 + 3, 0)
-// JL_FEATURE_DEF(hle, 32 * 2 + 4, 0) // Not used and gone in LLVM 5.0
+JL_FEATURE_DEF(hle, 32 * 2 + 4, UINT32_MAX) // Not used and gone in LLVM 5.0
 JL_FEATURE_DEF(avx2, 32 * 2 + 5, 0)
 JL_FEATURE_DEF(bmi2, 32 * 2 + 8, 0)
-// JL_FEATURE_DEF(invpcid, 32 * 2 + 10, 0) // Priviledged instruction
+JL_FEATURE_DEF(invpcid, 32 * 2 + 10, UINT32_MAX) // Not used and gone in LLVM 5.0
 JL_FEATURE_DEF(rtm, 32 * 2 + 11, 0)
 // JL_FEATURE_DEF(mpx, 32 * 2 + 14, 0) // Deprecated in LLVM 10.0
 JL_FEATURE_DEF(avx512f, 32 * 2 + 16, 0)
 JL_FEATURE_DEF(avx512dq, 32 * 2 + 17, 0)
 JL_FEATURE_DEF(rdseed, 32 * 2 + 18, 0)
 JL_FEATURE_DEF(adx, 32 * 2 + 19, 0)
-// JL_FEATURE_DEF(smap, 32 * 2 + 20, 0) // Not used and gone in LLVM 5.0
+JL_FEATURE_DEF(smap, 32 * 2 + 20, UINT32_MAX) // Not used and gone in LLVM 5.0
 JL_FEATURE_DEF(avx512ifma, 32 * 2 + 21, 0)
-// JL_FEATURE_DEF(pcommit, 32 * 2 + 22, 0) // Deprecated
+JL_FEATURE_DEF(pcommit, 32 * 2 + 22, UINT32_MAX) // Deprecated
 JL_FEATURE_DEF(clflushopt, 32 * 2 + 23, 0)
 JL_FEATURE_DEF(clwb, 32 * 2 + 24, 0)
 JL_FEATURE_DEF(avx512pf, 32 * 2 + 26, 0)
@@ -72,8 +72,8 @@ JL_FEATURE_DEF(movdir64b, 32 * 3 + 28, 0)
 JL_FEATURE_DEF(enqcmd, 32 * 3 + 29, 90000)
 
 // EAX=7,ECX=0: EDX
-// JL_FEATURE_DEF(avx5124vnniw, 32 * 4 + 2, ?????)
-// JL_FEATURE_DEF(avx5124fmaps, 32 * 4 + 3, ?????)
+JL_FEATURE_DEF(avx5124vnniw, 32 * 4 + 2, UINT32_MAX)
+JL_FEATURE_DEF(avx5124fmaps, 32 * 4 + 3, UINT32_MAX)
 JL_FEATURE_DEF(avx512vp2intersect, 32 * 4 + 8, 90000)
 JL_FEATURE_DEF(serialize, 32 * 4 + 14, 110000)
 JL_FEATURE_DEF(tsxldtrk, 32 * 4 + 16, 110000)
@@ -101,6 +101,7 @@ JL_FEATURE_DEF(mwaitx, 32 * 5 + 29, 0)
 // EAX=0xd: EAX
 JL_FEATURE_DEF(xsaveopt, 32 * 7 + 0, 0)
 JL_FEATURE_DEF(xsavec, 32 * 7 + 1, 0)
+JL_FEATURE_DEF(xgetbv1, 32 * 7 + 2, UINT32_MAX) // This is not used in LLVM
 JL_FEATURE_DEF(xsaves, 32 * 7 + 3, 0)
 
 // EAX=0x80000008: EBX
