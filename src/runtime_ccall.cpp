@@ -10,6 +10,7 @@
 #include "julia.h"
 #include "julia_internal.h"
 #include "processor.h"
+#include "runtime_resolve.h"
 #include "julia_assert.h"
 
 #ifndef _OS_WINDOWS_
@@ -62,6 +63,31 @@ void *jl_load_and_lookup(const char *f_lib, const char *f_name, void **hnd)
     void * ptr;
     jl_dlsym(handle, f_name, &ptr, 1);
     return ptr;
+}
+
+extern "C" void jl_init_runtime_resolve(void)
+{
+#if defined(_CPU_X86_64_)
+    if (jl_test_cpu_feature(JL_X86_avx512f)) {
+        if (jl_test_cpu_feature(JL_X86_xgetbv1)) {
+            jl_runtime_resolve_fp = jl_runtime_resolve_fp_avx512_xg1;
+        }
+        else {
+            jl_runtime_resolve_fp = jl_runtime_resolve_fp_avx512;
+        }
+    }
+    else if (jl_test_cpu_feature(JL_X86_avx)) {
+        jl_runtime_resolve_fp = jl_runtime_resolve_fp_avx;
+    }
+    else {
+        jl_runtime_resolve_fp = jl_runtime_resolve_fp_sse;
+    }
+#endif
+}
+
+extern "C" void *jl_runtime_resolve_real(void *p)
+{
+    jl_error("Test");
 }
 
 // miscellany

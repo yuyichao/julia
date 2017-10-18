@@ -46,7 +46,7 @@ RUNTIME_SRCS := \
 	threading partr stackwalk gc gc-debug gc-pages gc-stacks method \
 	jlapi signal-handling safepoint timing subtype \
 	crc32c APInt-C processor ircode
-SRCS := jloptions runtime_ccall rtutils
+SRCS := jloptions runtime_ccall rtutils runtime_resolve
 
 LLVMLINK :=
 
@@ -147,6 +147,16 @@ else
 FLISP_EXECUTABLE := $(FLISP_EXECUTABLE_$(JULIA_BUILD_MODE))
 endif
 
+ifneq ($(USEMSVC), 1)
+MPX_DETECT_SRC := 'bndmov %bnd0, (%rsp)'
+ifeq (supported, $(shell echo 'bndmov %bnd0, (%rsp)' | $(CC) -Werror -x assembler - -S -o - > /dev/null 2>&1 && echo supported))
+JCPPFLAGS += -DJULIA_HAS_MPX_SUPPORT=1
+endif
+else
+# MSVC 2015 should support this. Assume we have that for now...
+JCPPFLAGS += -DJULIA_HAS_MPX_SUPPORT=1
+endif
+
 default: $(JULIA_BUILD_MODE) # contains either "debug" or "release"
 all: debug release
 
@@ -166,6 +176,19 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.cpp $(SRCDIR)/llvm-version.h $(HEADERS) $(LLVM_CONF
 	@$(call PRINT_CC, $(CXX) $(LLVM_CXXFLAGS) $(JCPPFLAGS) $(JCXXFLAGS) $(SHIPFLAGS) $(CXX_DISABLE_ASSERTION) -c $< -o $@)
 $(BUILDDIR)/%.dbg.obj: $(SRCDIR)/%.cpp $(SRCDIR)/llvm-version.h $(HEADERS) $(LLVM_CONFIG_ABSOLUTE) | $(BUILDDIR)
 	@$(call PRINT_CC, $(CXX) $(LLVM_CXXFLAGS) $(JCPPFLAGS) $(JCXXFLAGS) $(DEBUGFLAGS) -c $< -o $@)
+ifneq ($(USEMSVC), 1)
+$(BUILDDIR)/%.o: $(SRCDIR)/%.S $(HEADERS) | $(BUILDDIR)
+	@$(call PRINT_CC, $(CC) $(JCPPFLAGS) $(SHIPFLAGS) -DJL_IN_ASM -c $< -o $@)
+$(BUILDDIR)/%.dbg.obj: %.S $(HEADERS) | $(BUILDDIR)
+	@$(call PRINT_CC, $(CC) $(JCPPFLAGS) $(DEBUGFLAGS) -DJL_IN_ASM -c $< -o $@)
+else
+$(BUILDDIR)/%.o: $(SRCDIR)/%.S $(HEADERS) | $(BUILDDIR)
+	@$(call PRINT_CC, $(CPP) -P $(JCPPFLAGS) $(SHIPFLAGS) -DJL_IN_ASM $<)
+	@$(call PRINT_CC, $(AS) $(JCPPFLAGS) $(SHIPFLAGS) -Fo $@ -c $*.i)
+$(BUILDDIR)/%.dbg.obj: %.S $(HEADERS) | $(BUILDDIR)
+	@$(call PRINT_CC, $(CPP) -P $(JCPPFLAGS) $(DEBUGFLAGS) -DJL_IN_ASM $<)
+	@$(call PRINT_CC, $(AS) $(JCPPFLAGS) $(DEBUGFLAGS) -Fo $@ -c $*.i)
+endif
 
 # public header rules
 $(eval $(call dir_target,$(build_includedir)/julia))
@@ -250,6 +273,8 @@ $(BUILDDIR)/toplevel.o $(BUILDDIR)/toplevel.dbg.obj: $(SRCDIR)/builtin_proto.h
 
 $(addprefix $(BUILDDIR)/,threading.o threading.dbg.obj gc.o gc.dbg.obj init.c init.dbg.obj task.o task.dbg.obj): $(addprefix $(SRCDIR)/,threading.h)
 $(addprefix $(BUILDDIR)/,APInt-C.o APInt-C.dbg.obj runtime_intrinsics.o runtime_intrinsics.dbg.obj): $(SRCDIR)/APInt-C.h
+$(BUILDDIR)/runtime_resolve.o $(BUILDDIR)/runtime_resolve.dbg.obj: $(SRCDIR)/runtime_resolve*.S $(SRCDIR)/runtime_resolve*.h
+$(BUILDDIR)/runtime_ccall.o $(BUILDDIR)/runtime_ccall.dbg.obj: $(SRCDIR)/runtime_resolve.h
 
 # archive library file rules
 $(BUILDDIR)/support/libsupport.a: $(addprefix $(SRCDIR)/support/,*.h *.c *.S) $(SRCDIR)/support/*.c

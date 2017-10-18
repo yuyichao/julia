@@ -7538,6 +7538,7 @@ extern "C" void jl_init_llvm(void)
     jl_default_cgparams.emitted_function = jl_nothing;
     jl_default_cgparams.generic_context = jl_nothing;
     jl_init_debuginfo();
+    jl_init_runtime_resolve();
 
     InitializeNativeTarget();
     InitializeNativeTargetAsmPrinter();
