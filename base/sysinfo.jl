@@ -51,7 +51,7 @@ A string containing the full path to the directory containing the `stdlib` packa
 STDLIB = "$BINDIR/../share/julia/stdlib/v$(VERSION.major).$(VERSION.minor)" # for bootstrap
 # In case STDLIB change after julia is built, the variable below can be used
 # to update cached method locations to updated ones.
-const BUILD_STDLIB_PATH = STDLIB
+const BUILD_STDLIB_PATH = "/usr/share/julia/stdlib/v$(VERSION.major).$(VERSION.minor)"
 
 # helper to avoid triggering precompile warnings
 
