@@ -125,6 +125,13 @@ let
 
         print_time("Stdlibs total", tot_time_stdlib)
     end
+    for i in 1:length(Base._included_files)
+        dep = Base._included_files[i]
+        newfile = ccall(:jl_map_source_filename, Ref{String}, (Any,), dep[2])
+        if newfile !== dep[2]
+            Base._included_files[i] = (dep[1], newfile)
+        end
+    end
 
     # Clear global state
     empty!(Core.ARGS)

@@ -737,6 +737,18 @@ static value_t julia_to_scm_(fl_context_t *fl_ctx, jl_value_t *v, int check_vali
     return julia_to_scm_noalloc2(fl_ctx, v, check_valid);
 }
 
+JL_DLLEXPORT __attribute__((weak)) const char *jl_archlinux_translate_filename(const char *filename);
+
+JL_DLLEXPORT jl_value_t *jl_map_source_filename(jl_value_t *filename)
+{
+    if (__likely(!jl_archlinux_translate_filename))
+        return filename;
+    const char *new_filename = jl_archlinux_translate_filename(jl_string_data(filename));
+    if (!new_filename)
+        return filename;
+    return jl_cstr_to_string(new_filename);
+}
+
 // Parse `text` starting at 0-based `offset` and attributing the content to
 // `filename`. Return an svec of (parsed_expr, final_offset)
 JL_DLLEXPORT jl_value_t *jl_fl_parse(const char *text, size_t text_len,
@@ -762,6 +774,7 @@ JL_DLLEXPORT jl_value_t *jl_fl_parse(const char *text, size_t text_len,
     fl_context_t *fl_ctx = &ctx->fl;
     value_t fl_text = cvalue_static_cstrn(fl_ctx, text, text_len);
     fl_gc_handle(fl_ctx, &fl_text);
+    filename = jl_map_source_filename(filename);
     value_t fl_filename = cvalue_static_cstrn(fl_ctx, jl_string_data(filename),
                                               jl_string_len(filename));
     fl_gc_handle(fl_ctx, &fl_filename);
