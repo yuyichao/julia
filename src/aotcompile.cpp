@@ -678,9 +678,7 @@ void addOptimizationPasses(legacy::PassManagerBase *PM, int opt_level,
     PM->add(createPropagateJuliaAddrspaces());
     PM->add(createScopedNoAliasAAWrapperPass());
     PM->add(createTypeBasedAAWrapperPass());
-    if (opt_level >= 3) {
-        PM->add(createBasicAAWrapperPass());
-    }
+    PM->add(createBasicAAWrapperPass());
 
     PM->add(createCFGSimplificationPass(simplifyCFGOptions));
     PM->add(createDeadCodeEliminationPass());
