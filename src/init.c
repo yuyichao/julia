@@ -703,7 +703,7 @@ JL_DLLEXPORT void julia_init(JL_IMAGE_SEARCH rel)
     }
 #endif
 
-#if defined(JL_DEBUG_BUILD)
+#if defined(JL_DEBUG_BUILD) || 1
     jl_using_gdb_jitevents = 1;
 # else
     const char *jit_gdb = getenv("ENABLE_GDBLISTENER");
