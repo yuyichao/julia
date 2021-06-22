@@ -31,7 +31,7 @@ elseif Sys.isapple()
     const libmbedtls = "@rpath/libmbedtls.13.dylib"
     const libmbedx509 = "@rpath/libmbedx509.1.dylib"
 else
-    const libmbedcrypto = "libmbedcrypto.so.5"
+    const libmbedcrypto = "libmbedcrypto.so.7"
     const libmbedtls = "libmbedtls.so.13"
     const libmbedx509 = "libmbedx509.so.1"
 end
