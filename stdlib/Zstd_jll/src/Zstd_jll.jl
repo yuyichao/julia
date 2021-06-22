@@ -13,29 +13,14 @@ export libzstd, zstd, zstdmt
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
-libzstd_path::String = ""
-zstd_path::String = ""
-zstdmt_path::String = ""
-const libzstd = LazyLibrary(
-    if Sys.iswindows()
-        BundledLazyLibraryPath("libzstd-1.dll")
-    elseif Sys.isapple()
-        BundledLazyLibraryPath("libzstd.1.dylib")
-    elseif Sys.islinux() || Sys.isfreebsd()
-        BundledLazyLibraryPath("libzstd.so.1")
-    else
-        error("Zstd_jll: Library 'libzstd' is not available for $(Sys.KERNEL)")
-    end;
-    dependencies = if Sys.iswindows() && Sys.WORD_SIZE == 32
-        LazyLibrary[libgcc_s]
-    else
-        LazyLibrary[]
-    end
-)
+const libzstd_path = "/usr/lib/libzstd.so"
+const libzstd = LazyLibrary(libzstd_path)
+const zstd_path = "/usr/bin/zstd"
+const zstdmt_path = "/usr/bin/zstdmt"
 
 if Sys.iswindows()
     const zstd_exe = "zstd.exe"
@@ -65,24 +50,17 @@ adjust_ENV(cmd::Cmd) = cmd
 end
 
 function adjust_ENV()
-    addPATH = joinpath(Sys.BINDIR, Base.PRIVATE_LIBEXECDIR)
-    oldPATH = get(ENV, "PATH", "")
-    newPATH = isempty(oldPATH) ? addPATH : "$addPATH$pathsep$oldPATH"
-    return ("PATH"=>newPATH,)
+    return ()
 end
 
 function zstd(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true) # deprecated, for compat only
-    withenv((adjust_PATH ? adjust_ENV() : ())...) do
-        f(zstd())
-    end
+    f(zstd())
 end
 function zstdmt(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true) # deprecated, for compat only
-    withenv((adjust_PATH ? adjust_ENV() : ())...) do
-        f(zstdmt())
-    end
+    f(zstdmt())
 end
-zstd() = adjust_ENV(`$zstd_path`)
-zstdmt() = adjust_ENV(`$zstdmt_path`)
+zstd() = `/usr/bin/zstd`
+zstdmt() = `/usr/bin/zstdmt`
 
 # Function to eagerly dlopen our library and thus resolve all dependencies
 function eager_mode()
@@ -93,13 +71,6 @@ function eager_mode()
 end
 
 is_available() = true
-
-function __init__()
-    global libzstd_path = string(libzstd.path)
-    global zstd_path = joinpath(Sys.BINDIR, Base.PRIVATE_LIBEXECDIR, zstd_exe)
-    global zstdmt_path = joinpath(Sys.BINDIR, Base.PRIVATE_LIBEXECDIR, zstdmt_exe)
-    global artifact_dir = dirname(Sys.BINDIR)
-end
 
 if Base.generating_output()
     precompile(eager_mode, ())

@@ -10,9 +10,9 @@ export libopenblas
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
 
 if Base.USE_BLAS64
@@ -21,30 +21,8 @@ else
     const libsuffix = ""
 end
 
-libopenblas_path::String = ""
-const libopenblas = LazyLibrary(
-    if Sys.iswindows()
-        BundledLazyLibraryPath(string("libopenblas", libsuffix, ".dll"))
-    elseif Sys.isapple()
-        BundledLazyLibraryPath(string("libopenblas", libsuffix, ".dylib"))
-    else
-        BundledLazyLibraryPath(string("libopenblas", libsuffix, ".so"))
-    end,
-    dependencies = if Sys.iswindows()
-        LazyLibrary[libgfortran, libgcc_s]
-    elseif Sys.isapple()
-        deps = LazyLibrary[libgfortran]
-        if isdefined(CompilerSupportLibraries_jll, :libquadmath)
-            push!(deps, CompilerSupportLibraries_jll.libquadmath)
-        end
-        if Sys.ARCH != :aarch64
-            push!(deps, CompilerSupportLibraries_jll.libgcc_s)
-        end
-        deps
-    else
-        LazyLibrary[libgfortran]
-    end
-)
+const libopenblas_path = "/usr/lib/libopenblas64_.so"
+const libopenblas = LazyLibrary(libopenblas_path)
 
 # Conform to LazyJLLWrappers API
 function eager_mode()
@@ -54,7 +32,6 @@ end
 is_available() = true
 
 function __init__()
-    global libopenblas_path = string(libopenblas.path)
     # make sure OpenBLAS does not set CPU affinity (#1070, #9639)
     if !(haskey(ENV, "OPENBLAS_MAIN_FREE"))
         ENV["OPENBLAS_MAIN_FREE"] = "1"
@@ -70,11 +47,6 @@ function __init__()
         # to the true value in its `__init__()` function.
         ENV["OPENBLAS_DEFAULT_NUM_THREADS"] = "1"
     end
-
-    global libopenblas_path = string(libopenblas.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(libopenblas_path)
-    push!(LIBPATH_list, LIBPATH[])
 end
 
 end  # module OpenBLAS_jll

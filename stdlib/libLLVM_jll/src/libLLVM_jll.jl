@@ -14,27 +14,12 @@ export libLLVM
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
-libLLVM_path::String = ""
-const libLLVM = LazyLibrary(
-    if Sys.iswindows()
-        BundledLazyLibraryPath("$(Base.libllvm_name).dll")
-    elseif Sys.isapple()
-        BundledLazyLibraryPath("libLLVM.dylib")
-    else
-        BundledLazyLibraryPath("$(Base.libllvm_name).so")
-    end,
-    dependencies = if Sys.isapple()
-        LazyLibrary[libz, libzstd]
-    elseif Sys.isfreebsd()
-        LazyLibrary[libz, libzstd, libgcc_s]
-    else
-        LazyLibrary[libz, libzstd, libstdcxx, libgcc_s]
-    end
-)
+const libLLVM_path = "/usr/lib/$(Base.libllvm_name).so"
+const libLLVM = LazyLibrary(libLLVM_path)
 
 function eager_mode()
     @static if @isdefined CompilerSupportLibraries_jll
@@ -45,13 +30,6 @@ function eager_mode()
     dlopen(libLLVM)
 end
 is_available() = true
-
-function __init__()
-    global libLLVM_path = string(libLLVM.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(libLLVM_path)
-    push!(LIBPATH_list, LIBPATH[])
-end
 
 if Base.generating_output()
     precompile(eager_mode, ())

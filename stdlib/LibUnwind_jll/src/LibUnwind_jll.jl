@@ -14,15 +14,12 @@ export libunwind
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
-libunwind_path::String = ""
-const libunwind = LazyLibrary(
-    BundledLazyLibraryPath("libunwind.so.8"),
-    dependencies = LazyLibrary[libz]
-)
+const libunwind_path = "/usr/lib/libunwind.so"
+const libunwind = LazyLibrary(libunwind_path)
 
 function eager_mode()
     @static if @isdefined CompilerSupportLibraries_jll
@@ -32,13 +29,6 @@ function eager_mode()
     dlopen(libunwind)
 end
 is_available() = @static(Sys.islinux() || Sys.isfreebsd()) ? true : false
-
-function __init__()
-    global libunwind_path = string(libunwind.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(libunwind_path)
-    push!(LIBPATH_list, LIBPATH[])
-end
 
 if Base.generating_output()
     precompile(eager_mode, ())

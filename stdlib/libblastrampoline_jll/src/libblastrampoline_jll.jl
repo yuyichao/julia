@@ -10,9 +10,9 @@ export libblastrampoline
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
 # Because LBT needs to have a weak-dependence on OpenBLAS (or any other BLAS)
 # we must manually construct a list of which modules and libraries we're going
@@ -31,16 +31,9 @@ function add_dependency!(mod::Module, lib::LazyLibrary, on_load_callback::Functi
     push!(on_load_callbacks, on_load_callback)
 end
 
-libblastrampoline_path::String = ""
+const libblastrampoline_path = "/usr/lib/libblastrampoline.so"
 const libblastrampoline = LazyLibrary(
-    # NOTE: keep in sync with `Base.libblas_name` and `Base.liblapack_name`.
-    if Sys.iswindows()
-        BundledLazyLibraryPath("libblastrampoline-5.dll")
-    elseif Sys.isapple()
-        BundledLazyLibraryPath("libblastrampoline.5.dylib")
-    else
-        BundledLazyLibraryPath("libblastrampoline.so.5")
-    end,
+    libblastrampoline_path,
     dependencies = LazyLibrary[],
     on_load_callback = libblastrampoline_on_load_callback
 )
@@ -52,13 +45,6 @@ function eager_mode()
     dlopen(libblastrampoline)
 end
 is_available() = true
-
-function __init__()
-    global libblastrampoline_path = string(libblastrampoline.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(libblastrampoline_path)
-    push!(LIBPATH_list, LIBPATH[])
-end
 
 if Base.generating_output()
     precompile(eager_mode, ())

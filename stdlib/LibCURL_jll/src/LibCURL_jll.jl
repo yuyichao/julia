@@ -16,31 +16,12 @@ export libcurl
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
-libcurl_path::String = ""
-const libcurl = LazyLibrary(
-    if Sys.iswindows()
-        BundledLazyLibraryPath("libcurl-4.dll")
-    elseif Sys.isapple()
-        BundledLazyLibraryPath("libcurl.4.dylib")
-    elseif Sys.islinux() || Sys.isfreebsd()
-        BundledLazyLibraryPath("libcurl.so.4")
-    else
-        error("LibCURL_jll: Library 'libcurl' is not available for $(Sys.KERNEL)")
-    end;
-    dependencies = if Sys.iswindows()
-        if  Sys.WORD_SIZE == 32
-            LazyLibrary[libz, libzstd, libnghttp2, libssh2, libgcc_s]
-        else
-            LazyLibrary[libz, libzstd, libnghttp2, libssh2]
-        end
-    else
-        LazyLibrary[libz, libzstd, libnghttp2, libssh2, libssl, libcrypto]
-    end
-)
+const libcurl_path = "/usr/lib/libcurl.so"
+const libcurl = LazyLibrary(libcurl_path)
 
 function eager_mode()
     Zlib_jll.eager_mode()
@@ -56,13 +37,6 @@ function eager_mode()
     dlopen(libcurl)
 end
 is_available() = true
-
-function __init__()
-    global libcurl_path = string(libcurl.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(libcurl_path)
-    push!(LIBPATH_list, LIBPATH[])
-end
 
 if Base.generating_output()
     precompile(eager_mode, ())

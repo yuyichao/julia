@@ -19,33 +19,12 @@ export libssh2
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
-libssh2_path::String = ""
-const libssh2 = LazyLibrary(
-    if Sys.iswindows()
-        BundledLazyLibraryPath("libssh2.dll")
-    elseif Sys.isapple()
-        BundledLazyLibraryPath("libssh2.1.dylib")
-    elseif Sys.islinux() || Sys.isfreebsd()
-        BundledLazyLibraryPath("libssh2.so.1")
-    else
-        error("LibSSH2_jll: Library 'libssh2' is not available for $(Sys.KERNEL)")
-    end;
-    dependencies = if Sys.iswindows()
-        if Sys.WORD_SIZE == 32
-            LazyLibrary[libgcc_s]
-        else
-            LazyLibrary[]
-        end
-    elseif Sys.islinux()
-        LazyLibrary[libcrypto]
-    elseif Sys.isfreebsd() || Sys.isapple()
-        LazyLibrary[libz, libcrypto]
-    end
-)
+const libssh2_path = "/usr/lib/libssh2.so"
+const libssh2 = LazyLibrary(libssh2_path)
 
 function eager_mode()
     @static if @isdefined Zlib_jll
@@ -60,13 +39,6 @@ function eager_mode()
     dlopen(libssh2)
 end
 is_available() = true
-
-function __init__()
-    global libssh2_path = string(libssh2.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(libssh2_path)
-    push!(LIBPATH_list, LIBPATH[])
-end
 
 if Base.generating_output()
     precompile(eager_mode, ())

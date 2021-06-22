@@ -10,14 +10,9 @@ const LIBPATH_list = String[]
 
 # These get calculated in __init__()
 const PATH = Ref("")
-const LIBPATH = Ref("")
-global artifact_dir::String = ""
-global cacert::String = ""
-
-function __init__()
-    global artifact_dir = dirname(Sys.BINDIR)
-    global cacert = normpath(Sys.BINDIR, Base.DATAROOTDIR, "julia", "cert.pem")
-end
+const LIBPATH = Ref("/usr/lib")
+artifact_dir::String = "/usr"
+cacert::String = "/usr/share/julia/cert.pem"
 
 # JLLWrappers API compatibility shims.  Note that not all of these will really make sense.
 # For instance, `find_artifact_dir()` won't actually be the artifact directory, because

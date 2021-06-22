@@ -12,38 +12,15 @@ export libgmp, libgmpxx
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
-libgmp_path::String = ""
-const libgmp = LazyLibrary(
-    if Sys.iswindows()
-        BundledLazyLibraryPath("libgmp-10.dll")
-    elseif Sys.isapple()
-        BundledLazyLibraryPath("libgmp.10.dylib")
-    else
-        BundledLazyLibraryPath("libgmp.so.10")
-    end
-)
+const libgmp_path = "/usr/lib/libgmp.so"
+const libgmp = LazyLibrary(libgmp_path)
 
-libgmpxx_path::String = ""
-const libgmpxx = LazyLibrary(
-    if Sys.iswindows()
-        BundledLazyLibraryPath("libgmpxx-4.dll")
-    elseif Sys.isapple()
-        BundledLazyLibraryPath("libgmpxx.4.dylib")
-    else
-        BundledLazyLibraryPath("libgmpxx.so.4")
-    end,
-    dependencies = if Sys.isfreebsd()
-        LazyLibrary[libgmp, libgcc_s]
-    elseif Sys.isapple()
-        LazyLibrary[libgmp]
-    else
-        LazyLibrary[libgmp, libstdcxx, libgcc_s]
-    end
-)
+const libgmpxx_path = "/usr/lib/libgmpxx.so"
+const libgmpxx = LazyLibrary(libgmpxx_path)
 
 function eager_mode()
     @static if @isdefined CompilerSupportLibraries_jll
@@ -53,14 +30,6 @@ function eager_mode()
     dlopen(libgmpxx)
 end
 is_available() = true
-
-function __init__()
-    global libgmp_path = string(libgmp.path)
-    global libgmpxx_path = string(libgmpxx.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(libgmp_path)
-    push!(LIBPATH_list, LIBPATH[])
-end
 
 if Base.generating_output()
     precompile(eager_mode, ())

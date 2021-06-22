@@ -16,33 +16,12 @@ export libgit2
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
-libgit2_path::String = ""
-const libgit2 = LazyLibrary(
-    if Sys.iswindows()
-        BundledLazyLibraryPath("libgit2.dll")
-    elseif Sys.isapple()
-        BundledLazyLibraryPath("libgit2.1.9.dylib")
-    elseif Sys.islinux() || Sys.isfreebsd()
-        BundledLazyLibraryPath("libgit2.so.1.9")
-    else
-        error("LibGit2_jll: Library 'libgit2' is not available for $(Sys.KERNEL)")
-    end;
-    dependencies = if Sys.iswindows()
-        if Sys.WORD_SIZE == 32
-            LazyLibrary[libssh2, libgcc_s, libpcre2_8, libz]
-        else
-            LazyLibrary[libssh2, libpcre2_8, libz]
-        end
-    elseif Sys.isfreebsd() || Sys.islinux()
-        LazyLibrary[libssh2, libssl, libcrypto, libpcre2_8, libz]
-    else
-        LazyLibrary[libssh2, libpcre2_8, libz]
-    end
-)
+const libgit2_path = "/usr/lib/libgit2.so"
+const libgit2 = LazyLibrary(libgit2_path)
 
 function eager_mode()
     LibSSH2_jll.eager_mode()
@@ -55,13 +34,6 @@ function eager_mode()
     dlopen(libgit2)
 end
 is_available() = true
-
-function __init__()
-    global libgit2_path = string(libgit2.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(libgit2_path)
-    push!(LIBPATH_list, LIBPATH[])
-end
 
 if Base.generating_output()
     precompile(eager_mode, ())

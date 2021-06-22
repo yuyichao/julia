@@ -9,34 +9,17 @@ export libz
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
-libz_path::String = ""
-const libz = LazyLibrary(
-    if Sys.iswindows()
-        BundledLazyLibraryPath("libz.dll")
-    elseif Sys.isapple()
-        BundledLazyLibraryPath("libz.1.dylib")
-    elseif Sys.islinux() || Sys.isfreebsd()
-        BundledLazyLibraryPath("libz.so.1")
-    else
-        error("Zlib_jll: Library 'libz' is not available for $(Sys.KERNEL)")
-    end
-)
+const libz_path = "/usr/lib/libz.so"
+const libz = LazyLibrary(libz_path)
 
 function eager_mode()
     dlopen(libz)
 end
 is_available() = true
-
-function __init__()
-    global libz_path = string(libz.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(libz_path)
-    push!(LIBPATH_list, LIBPATH[])
-end
 
 if Base.generating_output()
     precompile(eager_mode, ())
