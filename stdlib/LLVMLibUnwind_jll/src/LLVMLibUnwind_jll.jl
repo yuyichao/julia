@@ -10,12 +10,12 @@ export llvmlibunwind
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
-llvmlibunwind_path::String = ""
-const llvmlibunwind = LazyLibrary(BundledLazyLibraryPath("libunwind"))
+const llvmlibunwind_path = "/usr/lib/libunwind.so"
+const llvmlibunwind = LazyLibrary(llvmlibunwind_path)
 
 function eager_mode()
     dlopen(llvmlibunwind)
@@ -24,13 +24,6 @@ is_available() = @static Sys.isapple() ? true : false
 
 # JLLWrappers path compatibility accessor
 get_llvmlibunwind_path() = llvmlibunwind_path
-
-function __init__()
-    global llvmlibunwind_path = string(llvmlibunwind.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(llvmlibunwind_path)
-    push!(LIBPATH_list, LIBPATH[])
-end
 
 if Base.generating_output()
     precompile(eager_mode, ())

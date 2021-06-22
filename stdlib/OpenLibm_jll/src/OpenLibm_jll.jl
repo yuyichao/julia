@@ -12,25 +12,12 @@ export libopenlibm
 # These get calculated in __init__()
 const PATH = Ref("")
 const PATH_list = String[]
-const LIBPATH = Ref("")
-const LIBPATH_list = String[]
-artifact_dir::String = ""
+const LIBPATH = Ref("/usr/lib")
+const LIBPATH_list = String["/usr/lib"]
+artifact_dir::String = "/usr"
 
-libopenlibm_path::String = ""
-const libopenlibm = LazyLibrary(
-    if Sys.iswindows()
-        BundledLazyLibraryPath("libopenlibm.dll")
-    elseif Sys.isapple()
-        BundledLazyLibraryPath("libopenlibm.4.dylib")
-    else
-        BundledLazyLibraryPath("libopenlibm.so.4")
-    end,
-    dependencies = if Sys.iswindows()
-        LazyLibrary[libgcc_s]
-    else
-        LazyLibrary[]
-    end
-)
+const libopenlibm_path = "/usr/lib/libopenlibm.so"
+const libopenlibm = LazyLibrary(libopenlibm_path)
 
 function eager_mode()
     dlopen(libopenlibm)
@@ -42,12 +29,5 @@ is_available() = true
 
 # JLLWrappers path compatibility accessor
 get_libopenlibm_path() = libopenlibm_path
-
-function __init__()
-    global libopenlibm_path = string(libopenlibm.path)
-    global artifact_dir = dirname(Sys.BINDIR)
-    LIBPATH[] = dirname(libopenlibm_path)
-    push!(LIBPATH_list, LIBPATH[])
-end
 
 end  # module OpenLibm_jll
