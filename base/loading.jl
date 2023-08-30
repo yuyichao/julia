@@ -1343,6 +1343,34 @@ end
 
 # look for an entry-point for `pkg` and return its path if UUID matches
 function implicit_manifest_uuid_load_spec(dir::String, pkg::PkgId)::Union{Nothing, PkgLoadSpec}
+    spec = _implicit_manifest_uuid_load_spec(dir, pkg)
+    if spec !== nothing || dir != Sys.STDLIB
+        return spec
+    end
+    for parent_name in readdir(Sys.STDLIB)
+        pkgdir = normpath(joinpath(Sys.STDLIB, parent_name))
+        for proj in project_names
+            project_file = normpath(joinpath(pkgdir, proj))
+            isfile_casesensitive(project_file) || continue
+            d = parsed_toml(project_file)
+            parent_uuid = get(d, "uuid", nothing)
+            if !(parent_uuid isa String) ||
+                uuid5(UUID(parent_uuid), pkg.name) != pkg.uuid
+                continue
+            end
+            exts = get(d, "extensions", nothing)::Union{Dict{String, Any}, Nothing}
+            if exts !== nothing
+                if pkg.name in keys(exts)
+                    return PkgLoadSpec(find_ext_path(pkgdir, pkg.name),
+                                       project_get_syntax_version(d))
+                end
+            end
+        end
+    end
+    return
+end
+
+function _implicit_manifest_uuid_load_spec(dir::String, pkg::PkgId)::Union{Nothing, PkgLoadSpec}
     path, project_file = entry_point_and_project_file(dir, pkg.name)
     if project_file === nothing
         pkg.uuid === nothing || return nothing
@@ -1701,11 +1729,34 @@ const EXT_PRIMED = Dict{PkgId,Vector{PkgId}}() # Extension -> Parent + Triggers 
 const EXT_DORMITORY = Dict{PkgId,Vector{ExtensionId}}() # Trigger -> Extensions that can be triggered by it
 const EXT_DORMITORY_FAILED = ExtensionId[]
 
+function _insert_extension_triggers_stdlib(pkg::PkgId)
+    pkgdir = joinpath(Sys.STDLIB, pkg.name)
+    for proj in project_names
+        project_file = normpath(joinpath(pkgdir, proj))
+        isfile_casesensitive(project_file) || continue
+        entry = parsed_toml(project_file)
+        extensions = get(entry, "extensions", nothing)::Union{Nothing, Dict{String, Any}}
+        if extensions === nothing
+            continue
+        end
+        # Require STDLIB weakdeps to include the UUIDs
+        weakdeps = get(Dict{String, Any}, entry, "weakdeps")::Dict{String,Any}
+        deps = get(Dict{String, Any}, entry, "deps")::Dict{String,Any}
+        total_deps = merge(weakdeps, deps)
+        _insert_extension_triggers(pkg, extensions, total_deps)
+        return true
+    end
+    return false
+end
+
 function insert_extension_triggers(pkg::PkgId)
     pkg.uuid === nothing && return
     path_env_loc = locate_package_env(pkg)
     path_env_loc === nothing && return
     _, env_loc = path_env_loc
+    if env_loc == Sys.STDLIB && _insert_extension_triggers_stdlib(pkg)
+        return
+    end
     insert_extension_triggers(env_loc, pkg)
 end
 
