@@ -290,6 +290,8 @@ JL_DLLEXPORT jl_value_t *jl_backtrace_from_here(int returnsp, int skip)
             size_t size_incr = 0;
             have_more_frames = jl_unw_stepn(&cursor, jl_array_data(ip, jl_bt_element_t) + offset,
                                             &size_incr, sp_ptr, maxincr, skip, &pgcstack, 0);
+            if (offset > JL_MAX_BT_SIZE * 10)
+                have_more_frames = 0;
             skip = 0;
             offset += size_incr;
         }
