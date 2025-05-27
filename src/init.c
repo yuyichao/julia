@@ -671,6 +671,8 @@ static void init_global_mutexes(void) {
 
 JL_DLLEXPORT void jl_init_(jl_image_buf_t sysimage)
 {
+    putenv("UCX_HANDLE_ERRORS=none"); // disable openucx signal handler
+
     // initialize many things, in no particular order
     // but generally running from simple platform things to optional
     // configuration features
