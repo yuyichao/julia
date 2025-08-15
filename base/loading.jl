@@ -1155,6 +1155,10 @@ function explicit_manifest_entry_path(manifest_file::String, pkg::PkgId, entry::
             ispath(path) && return entry_path(abspath(path), pkg.name, entryfile)
         end
     end
+    mbypath = manifest_uuid_path(Sys.STDLIB, pkg)
+    if mbypath isa String && isfile(mbypath)
+        return mbypath
+    end
     # no depot contains the package, return missing to stop looking
     return missing
 end
