@@ -1313,6 +1313,10 @@ function explicit_manifest_entry_load_spec(manifest_file::String, pkg::PkgId, en
             ispath(path) && return PkgLoadSpec(entry_path(abspath(path), pkg.name, entryfile), syntax_version)
         end
     end
+    mbypath = manifest_uuid_path(Sys.STDLIB, pkg)
+    if mbypath isa String && isfile(mbypath)
+        return mbypath
+    end
     # no depot contains the package, return missing to stop looking
     return missing
 end
