@@ -75,7 +75,7 @@ export doc, hasdoc, undocumented_names
 # Basic API / Storage
 
 const modules = Module[]
-const META    = gensym(:meta)
+const META    = gensym("#Base#Docs#meta#")
 const METAType = IdDict{Any,Any}
 
 function meta(m::Module; autoinit::Bool=true)
