@@ -203,7 +203,7 @@ function link_image_cmd(path, out)
         libc           = _find_loaded(r"/libc\.so\.\d+$")                       # system libc
         ld_linux       = _find_loaded(r"/ld-(?:linux|musl|elf)[^/]*\.so\.\d+$") # system ld
         libc_nonshared = _find_static("libc_nonshared.a")
-        append!(LIBS,     String["-lgcc", "--as-needed", "-lgcc_s", "-latomic", "-lopenlibm", "--no-as-needed", libc])
+        append!(LIBS,     String["-lgcc", "--as-needed", _find_loaded(r"libgcc_s\."), "-latomic", "-lopenlibm", "--no-as-needed", libc])
         isfile(libc_nonshared) && push!(LIBS, libc_nonshared)
         append!(LIBS,     String["--as-needed", ld_linux, "--no-as-needed"])
         append!(crtbegin, String[_find_static("crti.o"), _find_static("crtbeginS.o")])
